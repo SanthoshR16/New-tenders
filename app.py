@@ -361,10 +361,13 @@ def mark_synced():
     sync_id = data.get("id")
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("UPDATE pending_sync SET synced = 1 WHERE id = ?", (sync_id,))
+    # Delete immediately to ensure zero storage buildup on Render
+    cur.execute("DELETE FROM pending_sync WHERE id = ?", (sync_id,))
+    # Auto-prune any orphan records older than 1 day
+    cur.execute("DELETE FROM pending_sync WHERE created_at < datetime('now', '-1 day')")
     conn.commit()
     conn.close()
-    return jsonify({"success": True})
+    return jsonify({"success": True, "message": "Deleted from cloud buffer."})
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
