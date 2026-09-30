@@ -1,4 +1,4 @@
-import os
+﻿import os
 import json
 import sqlite3
 import base64
@@ -2391,6 +2391,7 @@ def bid_page():
         }
 
     approver_opts = "".join([f'<option value="{a}">{a}</option>' for a in approvers])
+    batch_mfg_opts = "".join([f'<option value="{m}">{m}</option>' for m in manufacturers])
     items_rows = ""
     for idx, it in enumerate(tender["items"]):
         it_id = it.get("id") or (idx + 1)
@@ -2460,6 +2461,10 @@ def bid_page():
                 <div style="margin-bottom: 10px; display:flex; justify-content:space-between; align-items:center;">
                     <label style="font-weight: 700; cursor: pointer;"><input type="checkbox" id="sel-all" checked onchange="toggleAll(this)"> SELECT ALL ({len(tender['items'])} Items)</label>
                     <span id="match-count" style="font-size:12px; color:#64748b;"></span>
+                    <select onchange="applyBatchMfg(this)" style="padding:4px 8px; border-radius:6px; border:1px solid #cbd5e1; font-size:12px; background:#f8fafc; font-weight:600; cursor:pointer; margin-left:8px;">
+                        <option value="">⚡ Set all selected to ▾</option>
+                        {batch_mfg_opts}
+                    </select>
                 </div>
                 <div style="max-height: 520px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 6px;">
                     <table>
@@ -2522,11 +2527,45 @@ def bid_page():
                 row.querySelector('.mfg-select').disabled = !cb.checked;
                 row.style.opacity = cb.checked ? '1' : '0.4';
             }}
+                        function applyBatchMfg(sel) {{
+                const val = sel.value;
+                if (!val) return;
+                const rows = Array.from(document.querySelectorAll('.item-row')).filter(r => {{
+                    const cb = r.querySelector('.item-select');
+                    return cb && cb.checked;
+                }});
+                if (!rows.length) {{
+                    alert('Please select at least one item first.');
+                    sel.value = '';
+                    return;
+                }}
+                rows.forEach(r => {{
+                    const s = r.querySelector('.mfg-select');
+                    if (s) s.value = val;
+                }});
+                sel.value = '';
+            }}
             function handleMfg(s) {{
                 if (s.value === '__ADD__') {{
                     targetSelect = s;
                     document.getElementById('new-mfg-input').value = '';
                     document.getElementById('add-modal').style.display = 'flex';
+                    return;
+                }}
+                if (!s.value) return;
+                const otherSelected = Array.from(document.querySelectorAll('.item-row')).filter(function(r) {{
+                    const cb = r.querySelector('.item-select');
+                    const sel = r.querySelector('.mfg-select');
+                    return cb && cb.checked && sel && sel !== s;
+                }});
+                if (otherSelected.length) {{
+                    const ask = confirm('Apply \"' + s.value + '\" to all other (' + otherSelected.length + ') selected items as well?');
+                    if (ask) {{
+                        otherSelected.forEach(function(r) {{
+                            const sel = r.querySelector('.mfg-select');
+                            if (sel) sel.value = s.value;
+                        }});
+                    }}
                 }}
             }}
             function addMfg() {{
@@ -2537,21 +2576,35 @@ def bid_page():
                     headers: {{'Content-Type': 'application/json'}},
                     body: JSON.stringify({{name: val}})
                 }})
-                .then(r => r.json())
-                .then(d => {{
-                    document.querySelectorAll('.mfg-select').forEach(sel => {{
+                .then(function(r) {{ return r.json(); }})
+                .then(function(d) {{
+                    document.querySelectorAll('.mfg-select').forEach(function(sel) {{
                         let cur = (sel === targetSelect) ? val : sel.value;
                         let h = '<option value="">Select Manufacturer ▾</option>';
-                        d.manufacturers.forEach(m => {{
-                            h += `<option value="${{m}}" ${{m.toLowerCase() === cur.toLowerCase() ? 'selected' : ''}}>${{m}}</option>`;
+                        d.manufacturers.forEach(function(m) {{
+                            h += '<option value="' + m + '" ' + (m.toLowerCase() === cur.toLowerCase() ? 'selected' : '') + '>' + m + '</option>';
                         }});
                         h += '<option value="__ADD__">➕ Add Manufacturer</option>';
                         sel.innerHTML = h;
                     }});
                     document.getElementById('add-modal').style.display = 'none';
+                    const otherSelected = Array.from(document.querySelectorAll('.item-row')).filter(function(r) {{
+                        const cb = r.querySelector('.item-select');
+                        const sel = r.querySelector('.mfg-select');
+                        return cb && cb.checked && sel && sel !== targetSelect;
+                    }});
+                    if (otherSelected.length) {{
+                        const ask = confirm('Apply "' + val + '" to all other (' + otherSelected.length + ') selected items as well?');
+                        if (ask) {{
+                            otherSelected.forEach(function(r) {{
+                                const sel = r.querySelector('.mfg-select');
+                                if (sel) sel.value = val;
+                            }});
+                        }}
+                    }}
                 }});
             }}
-            function submitAllocation() {{
+function submitAllocation() {{
                 const approver = document.getElementById('approver-select').value;
                 const allocs = [];
                 let err = false;
@@ -2705,3 +2758,4 @@ def mark_synced():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+
