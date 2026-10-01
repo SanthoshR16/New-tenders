@@ -140,6 +140,28 @@ AUTH_GATE_HTML = """<!DOCTYPE html>
         </form>
     </main>
     <script>
+        let reopeningTender = false;
+        async function reopenIfAlreadySignedIn() {
+            if (reopeningTender) return;
+            try {
+                const response = await fetch("/api/auth/status", {
+                    credentials: "same-origin",
+                    cache: "no-store"
+                });
+                const result = await response.json();
+                if (response.ok && result.authenticated) {
+                    reopeningTender = true;
+                    window.location.reload();
+                }
+            } catch (error) {
+                document.getElementById("status").textContent =
+                    "Could not check saved sign-in. You can still enter your access code.";
+            }
+        }
+
+        window.addEventListener("pageshow", reopenIfAlreadySignedIn);
+        reopenIfAlreadySignedIn();
+
         document.getElementById("login-form").addEventListener("submit", async event => {
             event.preventDefault();
             const status = document.getElementById("status");
@@ -171,7 +193,9 @@ AUTH_GATE_HTML = """<!DOCTYPE html>
 
 
 def auth_gate_response():
-    return render_template_string(AUTH_GATE_HTML)
+    response = app.make_response(render_template_string(AUTH_GATE_HTML))
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 _configure_session_secret()
 init_db()
@@ -2883,6 +2907,15 @@ def login_member():
     session["authorized_role"] = role
     session.permanent = True
     return jsonify({"status": "ok", "role": role})
+
+
+@app.route("/api/auth/status")
+def auth_status():
+    role = _current_member()
+    response = jsonify({"authenticated": role is not None, "role": role})
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
 
 @app.route("/api/record_dontbid", methods=["POST"])
 @require_member

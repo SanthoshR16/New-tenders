@@ -55,8 +55,15 @@ class MemberAccessControlTests(unittest.TestCase):
         )
 
     def test_pages_and_decision_apis_require_member_session(self):
-        self.assertIn(b"Member access code", self.client.get("/bid?tender=IND2708").data)
+        gate = self.client.get("/bid?tender=IND2708")
+        self.assertIn(b"Member access code", gate.data)
+        self.assertIn(b"pageshow", gate.data)
+        self.assertEqual(gate.headers["Cache-Control"], "no-store")
         self.assertIn(b"Member access code", self.client.get("/dontbid").data)
+        self.assertEqual(
+            self.client.get("/api/auth/status").get_json(),
+            {"authenticated": False, "role": None},
+        )
         self.assertEqual(
             self.client.post(
                 "/api/submit_allocation",
@@ -82,6 +89,10 @@ class MemberAccessControlTests(unittest.TestCase):
             response = self.login(client, role)
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response.get_json()["role"], role)
+            self.assertEqual(
+                client.get("/api/auth/status").get_json(),
+                {"authenticated": True, "role": role},
+            )
             page = client.get("/bid?tender=IND2708")
             self.assertEqual(page.status_code, 200)
             self.assertIn(role.encode(), page.data)
