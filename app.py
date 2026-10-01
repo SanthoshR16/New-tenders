@@ -2645,8 +2645,12 @@ def bid_page():
                                  `*Approved By:* ${{approver}}\n\n` +
                                  `*Allocated Items:*\n` + waList +
                                  `\n_Recorded in system._`;
-                    document.getElementById('wa-share-btn').href = 'https://api.whatsapp.com/send?text=' + encodeURIComponent(waText);
+                    const waUrl = 'https://api.whatsapp.com/send?text=' + encodeURIComponent(waText);
+                    document.getElementById('wa-share-btn').href = waUrl;
                     document.getElementById('success-card').style.display = 'block';
+                    setTimeout(function() {{
+                        window.location.href = waUrl;
+                    }}, 700);
                 }});
             }}
         </script>
@@ -2681,6 +2685,11 @@ def dont_bid():
         <a href="{wa_url}" target="_blank" style="display:inline-block; margin-top:20px; background:#25D366; color:white; padding:12px 20px; border-radius:6px; text-decoration:none; font-weight:bold;">
             💬 Share to WhatsApp Group
         </a>
+        <script>
+            setTimeout(function() {{
+                window.location.href = "{wa_url}";
+            }}, 700);
+        </script>
     </body>
     </html>
     """
