@@ -2504,6 +2504,11 @@ def bid_page():
     cur.execute("SELECT name FROM approvers ORDER BY id ASC")
     approvers = [r["name"] for r in cur.fetchall()]
     conn.close()
+    bulk_manufacturer_options = '<option value="">Choose manufacturer…</option>'
+    bulk_manufacturer_options += "".join(
+        f'<option value="{html_lib.escape(name, quote=True)}">{html_lib.escape(name)}</option>'
+        for name in manufacturers
+    )
 
     tender = None
     if url_items:
@@ -2547,7 +2552,8 @@ def bid_page():
 
         mfg_opts = '<option value="">Select ▾</option>'
         for m in manufacturers:
-            mfg_opts += f'<option value="{m}">{m}</option>'
+            safe_mfg = html_lib.escape(m, quote=True)
+            mfg_opts += f'<option value="{safe_mfg}">{safe_mfg}</option>'
         mfg_opts += '<option value="__ADD__">➕ Add Manufacturer</option>'
 
         it_name_esc = html_lib.escape(str(it_name), quote=True)
@@ -2624,6 +2630,13 @@ def bid_page():
             </div>
             <div class="content-pad" style="padding: 15px 20px;">
                 {search_box_html}
+                <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:12px; padding:10px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px;">
+                    <label for="bulk-manufacturer" style="font-weight:600; font-size:13px;">Fill blank manufacturer for selected items:</label>
+                    <select id="bulk-manufacturer" style="flex:1; min-width:150px; padding:8px; border:1px solid #cbd5e1; border-radius:6px;">
+                        {bulk_manufacturer_options}
+                    </select>
+                    <button type="button" onclick="applyManufacturerToSelectedBlanks()" style="padding:8px 12px; border:0; border-radius:6px; background:#2563eb; color:white; font-weight:600;">Apply to selected</button>
+                </div>
                 <div style="margin-bottom: 10px; display:flex; justify-content:space-between; align-items:center;">
                     <label style="font-weight: 700; cursor: pointer;"><input type="checkbox" id="sel-all" checked onchange="toggleAll(this)"> SELECT ALL ({len(tender['items'])} Items)</label>
                     <span id="match-count" style="font-size:12px; color:#64748b;"></span>
@@ -2708,15 +2721,25 @@ def bid_page():
                         toggleRow(cb);
                     }}
                 }}
-                document.querySelectorAll('#items-tbody tr').forEach(r => {{
-                    const cb = r.querySelector('.item-select');
-                    if (cb && cb.checked) {{
-                        const sel = r.querySelector('.mfg-select');
-                        if (sel && sel !== s) {{
-                            sel.value = chosen;
-                        }}
+            }}
+            function applyManufacturerToSelectedBlanks() {{
+                const manufacturer = document.getElementById('bulk-manufacturer').value;
+                if (!manufacturer) return alert('Choose a manufacturer first.');
+                const selectedRows = Array.from(document.querySelectorAll('#items-tbody .item-row'))
+                    .filter(row => row.querySelector('.item-select').checked);
+                if (selectedRows.length === 0) return alert('Select at least one item first.');
+                let appliedCount = 0;
+                selectedRows.forEach(row => {{
+                    const select = row.querySelector('.mfg-select');
+                    if (select && !select.value) {{
+                        select.value = manufacturer;
+                        appliedCount++;
                     }}
                 }});
+                document.getElementById('bulk-manufacturer').value = '';
+                if (appliedCount === 0) {{
+                    alert('Selected items already have manufacturers. Change an item individually to replace one.');
+                }}
             }}
             function addMfg() {{
                 const val = document.getElementById('new-mfg-input').value.trim();
@@ -2726,63 +2749,55 @@ def bid_page():
                     headers: {{'Content-Type': 'application/json'}},
                     body: JSON.stringify({{name: val}})
                 }})
-                .then(r => r.json())
+                .then(r => {{
+                    if (!r.ok) throw new Error('Server returned HTTP ' + r.status);
+                    return r.json();
+                }})
                 .then(d => {{
                     document.querySelectorAll('.mfg-select').forEach(sel => {{
-                        let cur = (sel === targetSelect) ? val : sel.value;
-                        let h = '<option value="">Select ▾</option>';
-                        d.manufacturers.forEach(m => {{
-                            h += `<option value="${{m}}" ${{m.toLowerCase() === cur.toLowerCase() ? 'selected' : ''}}>${{m}}</option>`;
-                        }});
-                        h += '<option value="__ADD__">➕ Add Manufacturer</option>';
-                        sel.innerHTML = h;
+                        const previous = sel.value;
+                        sel.replaceChildren(new Option('Select ▾', ''));
+                        d.manufacturers.forEach(name => sel.add(new Option(name, name)));
+                        sel.add(new Option('➕ Add Manufacturer', '__ADD__'));
+                        sel.value = previous;
                     }});
-                    if (val) {{
-                        document.querySelectorAll('#items-tbody tr').forEach(r => {{
-                            const cb = r.querySelector('.item-select');
-                            if (cb && cb.checked) {{
-                                const sel = r.querySelector('.mfg-select');
-                                if (sel) sel.value = val;
-                            }}
-                        }});
-                    }}
+                    if (targetSelect) targetSelect.value = d.manufacturers.find(
+                        name => name.toLowerCase() === val.toLowerCase()
+                    ) || '';
+                    targetSelect = null;
                     document.getElementById('add-modal').style.display = 'none';
-                }});
+                }})
+                .catch(error => alert('Could not add manufacturer: ' + error.message));
             }}
             function submitAllocation() {{
                 const approver = (document.getElementById('approver-select') && document.getElementById('approver-select').value) ? document.getElementById('approver-select').value : 'Kamal Sir';
                 const rows = Array.from(document.querySelectorAll('.item-row'));
                 
-                let defaultMfg = '';
-                rows.forEach(r => {{
-                    const m = r.querySelector('.mfg-select') ? r.querySelector('.mfg-select').value : '';
-                    if (m && m !== '__ADD__') defaultMfg = m;
-                }});
-
-                if (!defaultMfg) {{
-                    return alert('Please select a manufacturer before submitting.');
-                }}
-
                 const allocs = [];
+                const itemsWithoutManufacturer = [];
                 rows.forEach(r => {{
                     const cb = r.querySelector('.item-select');
                     if (!cb || cb.checked) {{
-                        let mfg = r.querySelector('.mfg-select') ? r.querySelector('.mfg-select').value : '';
+                        const mfg = r.querySelector('.mfg-select') ? r.querySelector('.mfg-select').value : '';
                         if (!mfg || mfg === '__ADD__') {{
-                            mfg = defaultMfg;
-                            if (r.querySelector('.mfg-select')) r.querySelector('.mfg-select').value = defaultMfg;
+                            itemsWithoutManufacturer.push(r.getAttribute('data-name') || 'Item');
+                        }} else {{
+                            allocs.push({{
+                                item_id: r.getAttribute('data-id') || '1',
+                                item_name: r.getAttribute('data-name') || 'Item',
+                                quantity: r.getAttribute('data-qty') || '1',
+                                manufacturer: mfg
+                            }});
                         }}
-                        allocs.push({{
-                            item_id: r.getAttribute('data-id') || '1',
-                            item_name: r.getAttribute('data-name') || 'Item',
-                            quantity: r.getAttribute('data-qty') || '1',
-                            manufacturer: mfg
-                        }});
                     }}
                 }});
 
                 if (allocs.length === 0) {{
                     return alert('Please select at least one item.');
+                }}
+                if (itemsWithoutManufacturer.length > 0) {{
+                    return alert('Choose a manufacturer for every selected item before submitting. Missing: ' +
+                        itemsWithoutManufacturer.slice(0, 5).join(', '));
                 }}
 
                 const subBtn = document.getElementById('sub-btn');
