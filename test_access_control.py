@@ -98,11 +98,13 @@ class MemberAccessControlTests(unittest.TestCase):
             page = client.get("/bid?tender=IND2708")
             self.assertEqual(page.status_code, 200)
             self.assertIn(role.encode(), page.data)
+            self.assertIn(b"SELECT ALL FOR GROUP", page.data)
             self.assertIn(b"Fill blank manufacturer for selected items", page.data)
             self.assertIn(b"applyManufacturerToSelectedBlanks", page.data)
             self.assertIn(b"selected items already have manufacturers", page.data.lower())
             self.assertIn(b"Change an item individually", page.data)
             self.assertIn(b"manufacturer for every selected item", page.data)
+            self.assertIn(b"selectedForGroup", page.data)
             self.assertNotIn(b"if (sel && sel !== s)", page.data)
 
         cookie = response.headers.get("Set-Cookie", "")

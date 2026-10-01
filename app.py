@@ -2638,7 +2638,7 @@ def bid_page():
                     <button type="button" onclick="applyManufacturerToSelectedBlanks()" style="padding:8px 12px; border:0; border-radius:6px; background:#2563eb; color:white; font-weight:600;">Apply to selected</button>
                 </div>
                 <div style="margin-bottom: 10px; display:flex; justify-content:space-between; align-items:center;">
-                    <label style="font-weight: 700; cursor: pointer;"><input type="checkbox" id="sel-all" checked onchange="toggleAll(this)"> SELECT ALL ({len(tender['items'])} Items)</label>
+                    <label style="font-weight: 700; cursor: pointer;"><input type="checkbox" id="sel-all" checked onchange="toggleAll(this)"> SELECT ALL FOR GROUP ({len(tender['items'])} Items)</label>
                     <span id="match-count" style="font-size:12px; color:#64748b;"></span>
                 </div>
                 <div style="max-height: 520px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 6px;">
@@ -2734,6 +2734,11 @@ def bid_page():
                     if (select && !select.value) {{
                         select.value = manufacturer;
                         appliedCount++;
+                        const checkbox = row.querySelector('.item-select');
+                        if (checkbox) {{
+                            checkbox.checked = false;
+                            toggleRow(checkbox);
+                        }}
                     }}
                 }});
                 document.getElementById('bulk-manufacturer').value = '';
@@ -2777,18 +2782,17 @@ def bid_page():
                 const itemsWithoutManufacturer = [];
                 rows.forEach(r => {{
                     const cb = r.querySelector('.item-select');
-                    if (!cb || cb.checked) {{
-                        const mfg = r.querySelector('.mfg-select') ? r.querySelector('.mfg-select').value : '';
-                        if (!mfg || mfg === '__ADD__') {{
-                            itemsWithoutManufacturer.push(r.getAttribute('data-name') || 'Item');
-                        }} else {{
-                            allocs.push({{
-                                item_id: r.getAttribute('data-id') || '1',
-                                item_name: r.getAttribute('data-name') || 'Item',
-                                quantity: r.getAttribute('data-qty') || '1',
-                                manufacturer: mfg
-                            }});
-                        }}
+                    const mfg = r.querySelector('.mfg-select') ? r.querySelector('.mfg-select').value : '';
+                    const selectedForGroup = !cb || cb.checked;
+                    if (selectedForGroup && (!mfg || mfg === '__ADD__')) {{
+                        itemsWithoutManufacturer.push(r.getAttribute('data-name') || 'Item');
+                    }} else if (mfg && mfg !== '__ADD__') {{
+                        allocs.push({{
+                            item_id: r.getAttribute('data-id') || '1',
+                            item_name: r.getAttribute('data-name') || 'Item',
+                            quantity: r.getAttribute('data-qty') || '1',
+                            manufacturer: mfg
+                        }});
                     }}
                 }});
 
