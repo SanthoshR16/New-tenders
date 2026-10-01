@@ -2541,7 +2541,27 @@ def bid_page():
                     targetSelect = s;
                     document.getElementById('new-mfg-input').value = '';
                     document.getElementById('add-modal').style.display = 'flex';
+                    return;
                 }}
+                const chosen = s.value;
+                if (!chosen) return;
+                const row = s.closest('tr');
+                if (row) {{
+                    const cb = row.querySelector('.item-select');
+                    if (cb && !cb.checked) {{
+                        cb.checked = true;
+                        toggleRow(cb);
+                    }}
+                }}
+                document.querySelectorAll('#items-tbody tr').forEach(r => {{
+                    const cb = r.querySelector('.item-select');
+                    if (cb && cb.checked) {{
+                        const sel = r.querySelector('.mfg-select');
+                        if (sel && sel !== s) {{
+                            sel.value = chosen;
+                        }}
+                    }}
+                }});
             }}
             function addMfg() {{
                 const val = document.getElementById('new-mfg-input').value.trim();
@@ -2562,6 +2582,15 @@ def bid_page():
                         h += '<option value="__ADD__">➕ Add Manufacturer</option>';
                         sel.innerHTML = h;
                     }});
+                    if (val) {{
+                        document.querySelectorAll('#items-tbody tr').forEach(r => {{
+                            const cb = r.querySelector('.item-select');
+                            if (cb && cb.checked) {{
+                                const sel = r.querySelector('.mfg-select');
+                                if (sel) sel.value = val;
+                            }}
+                        }});
+                    }}
                     document.getElementById('add-modal').style.display = 'none';
                 }});
             }}
