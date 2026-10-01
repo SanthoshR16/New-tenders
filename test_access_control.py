@@ -90,6 +90,11 @@ class MemberAccessControlTests(unittest.TestCase):
         self.assertIn("HttpOnly", cookie)
         self.assertIn("Secure", cookie)
         self.assertIn("SameSite=Strict", cookie)
+        self.assertIn("Expires=", cookie)
+        self.assertEqual(
+            tender_app.app.permanent_session_lifetime.total_seconds(),
+            60 * 60 * 24 * 365 * 10,
+        )
 
     def test_invalid_code_cannot_access_or_spoof_decision_name(self):
         denied = self.client.post(
