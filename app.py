@@ -18,7 +18,13 @@ INITIAL_MANUFACTURERS = [
     "IFB", "Cnergy", "Clarity", "Radical", "Pridex", "Swemed", "Anand Agencies"
 ]
 
-INITIAL_APPROVERS = ["Kamal Sir", "Uday Sir"]
+INITIAL_APPROVERS = ["Kamal Sir", "Uday Sir", "Developer"]
+
+AUTHORIZED_MEMBERS = {
+    "7760969517": "Developer",
+    "9845295400": "Kamal Sir",
+    "9980304157": "Uday Sir"
+}
 
 def get_db():
     conn = sqlite3.connect(DB_PATH)
@@ -2457,17 +2463,25 @@ def bid_page():
         </style>
     </head>
     <body>
-        <div class="card" id="form-card">
+        <!-- AUTHORIZATION GATE -->
+        <div class="card" id="auth-gate" style="display:none; max-width:440px; margin:40px auto; padding:25px; text-align:center;">
+            <div style="font-size: 44px; margin-bottom: 10px;">🔐</div>
+            <h2 style="margin: 0 0 8px 0; font-size: 20px; color:#0f172a;">Authorized Access Only</h2>
+            <p style="color: #64748b; font-size: 14px; margin-bottom: 20px;">Enter your registered 10-digit mobile number to access tender decisions.</p>
+            <input type="tel" id="auth-phone-input" placeholder="Enter 10-digit Mobile Number" maxlength="10" style="width: 100%; padding: 12px; font-size: 16px; border: 1px solid #cbd5e1; border-radius: 8px; margin-bottom: 12px; text-align: center; font-weight: bold; letter-spacing: 1px;">
+            <div id="auth-error" style="color: #dc2626; font-size: 13px; font-weight: 600; margin-bottom: 12px; display: none;"></div>
+            <button type="button" onclick="verifyPhone()" style="width: 100%; background: #16a34a; color: white; border: none; padding: 13px; font-size: 16px; font-weight: 700; border-radius: 8px; cursor: pointer;">Verify & Enter</button>
+        </div>
+
+        <div class="card" id="form-card" style="display:none;">
             <div class="hdr">
                 <span class="badge">🟢 BID APPROVED</span>
                 <h2 style="margin: 0 0 6px 0;">{tender['tender_name']}</h2>
                 <div style="font-size: 14px; opacity: 0.9;">Tender: {tender['tender_no']} | Dept: {tender['department']}</div>
             </div>
             <div class="approver-bar">
-                <b>👤 Approver:</b>
-                <select id="approver-select" style="padding: 6px 12px; border-radius: 6px; border: 1px solid #cbd5e1; font-weight: 600;">
-                    {approver_opts}
-                </select>
+                <div style="font-size: 14px;"><b>👤 Approver:</b> <span id="approver-display" style="font-weight:700; color:#15803d; margin-left:6px;"></span></div>
+                <input type="hidden" id="approver-select" value="Kamal Sir">
             </div>
             <div class="content-pad" style="padding: 15px 20px;">
                 {search_box_html}
@@ -2510,6 +2524,51 @@ def bid_page():
         </div>
 
         <script>
+            const AUTH_MEMBERS = {{
+                "7760969517": "Developer",
+                "9845295400": "Kamal Sir",
+                "9980304157": "Uday Sir"
+            }};
+
+            function checkAuth() {{
+                let phone = localStorage.getItem("tender_user_phone");
+                const urlParams = new URLSearchParams(window.location.search);
+                const p = urlParams.get('phone');
+                if (p) phone = p.replace(/\\D/g, '').slice(-10);
+
+                if (phone && AUTH_MEMBERS[phone]) {{
+                    grantAccess(phone, AUTH_MEMBERS[phone]);
+                }} else {{
+                    document.getElementById('auth-gate').style.display = 'block';
+                    document.getElementById('form-card').style.display = 'none';
+                }}
+            }}
+
+            function verifyPhone() {{
+                const input = document.getElementById('auth-phone-input');
+                const err = document.getElementById('auth-error');
+                const phone = input.value.replace(/\\D/g, '').slice(-10);
+
+                if (AUTH_MEMBERS[phone]) {{
+                    localStorage.setItem("tender_user_phone", phone);
+                    grantAccess(phone, AUTH_MEMBERS[phone]);
+                }} else {{
+                    err.style.display = 'block';
+                    err.innerText = '❌ Access Denied: Unauthorized mobile number.';
+                }}
+            }}
+
+            function grantAccess(phone, name) {{
+                document.getElementById('auth-gate').style.display = 'none';
+                document.getElementById('form-card').style.display = 'block';
+                const hiddenApprover = document.getElementById('approver-select');
+                if (hiddenApprover) hiddenApprover.value = name;
+                const displayApprover = document.getElementById('approver-display');
+                if (displayApprover) displayApprover.innerText = name;
+            }}
+
+            checkAuth();
+
             let targetSelect = null;
             function filterItems() {{
                 const q = document.getElementById('filter-input').value.toLowerCase().trim();
@@ -2663,36 +2722,121 @@ def bid_page():
 def dont_bid():
     raw_tender = request.args.get("tender") or request.args.get("id") or "IND2414"
     tender_no = raw_tender.strip().upper()
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute("""
-    INSERT INTO pending_sync (action_type, tender_no, data_json, synced)
-    VALUES ('NOT_BID', ?, ?, 0)
-    """, (tender_no, json.dumps({"tender_no": tender_no, "action": "NOT_BID"})))
-    conn.commit()
-    conn.close()
-
-    wa_text = f"*TENDER DECISION — NOT BID*\n\n*Tender:* {tender_no}\n*Status:* Rejected / Moved to Not Done\n\n_Recorded in system._"
-    wa_url = "https://api.whatsapp.com/send?text=" + urllib.parse.quote(wa_text)
 
     return f"""<!DOCTYPE html>
     <html>
-    <head><title>Tender Rejected</title><meta name="viewport" content="width=device-width, initial-scale=1"></head>
-    <body style="font-family: sans-serif; text-align: center; padding: 40px; background: #fff5f5;">
-        <h1 style="color: #dc2626;">🚫 MOVED TO NOT DONE</h1>
-        <p>Tender <b>{tender_no}</b> recorded as NOT BID.</p>
-        <p style="color: #64748b;">Recorded in cloud queue. When local PC syncs, it updates local files automatically.</p>
-        <a href="{wa_url}" target="_blank" style="display:inline-block; margin-top:20px; background:#25D366; color:white; padding:12px 20px; border-radius:6px; text-decoration:none; font-weight:bold;">
-            💬 Share to WhatsApp Group
-        </a>
+    <head>
+        <title>Tender Decision — {tender_no}</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <style>
+            * {{ box-sizing: border-box; }}
+            body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f8fafc; padding: 20px; color: #0f172a; text-align: center; }}
+            .card {{ max-width: 440px; margin: 40px auto; background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); border: 1px solid #e2e8f0; }}
+        </style>
+    </head>
+    <body>
+        <div class="card" id="auth-gate" style="display:none;">
+            <div style="font-size: 40px; margin-bottom: 10px;">🔐</div>
+            <h2 style="margin: 0 0 8px 0; font-size: 20px;">Authorized Access Only</h2>
+            <p style="color: #64748b; font-size: 14px; margin-bottom: 20px;">Enter your registered 10-digit mobile number to record decision:</p>
+            <input type="tel" id="phone-input" placeholder="10-digit Mobile Number" maxlength="10" style="width: 100%; padding: 12px; font-size: 16px; border: 1px solid #cbd5e1; border-radius: 8px; margin-bottom: 12px; text-align: center; font-weight: bold; letter-spacing: 1px;">
+            <div id="auth-error" style="color: #dc2626; font-size: 13px; font-weight: 600; margin-bottom: 12px; display: none;"></div>
+            <button type="button" onclick="verifyPhone()" style="width: 100%; background: #dc2626; color: white; border: none; padding: 12px; font-size: 16px; font-weight: 700; border-radius: 8px; cursor: pointer;">Confirm Rejection</button>
+        </div>
+
+        <div class="card" id="reject-card" style="display:none; background: #fff5f5; border-color: #fecaca;">
+            <h1 style="color: #dc2626; margin: 0 0 10px 0; font-size: 24px;">🚫 MOVED TO NOT DONE</h1>
+            <p style="font-size: 16px;">Tender <b>{tender_no}</b> recorded as NOT BID.</p>
+            <p style="color: #64748b; font-size: 14px;">Decision by: <b id="user-display" style="color:#0f172a;"></b></p>
+            <p style="color: #16a34a; font-weight: 600; font-size: 14px;">Redirecting to WhatsApp...</p>
+            <a id="wa-btn" href="#" target="_blank" style="display:inline-block; margin-top:15px; background:#25D366; color:white; padding:12px 20px; border-radius:8px; text-decoration:none; font-weight:bold; font-size:15px;">
+                💬 Share to WhatsApp Group
+            </a>
+        </div>
+
         <script>
-            setTimeout(function() {{
-                window.location.href = "{wa_url}";
-            }}, 700);
+            const AUTH_MEMBERS = {{
+                "7760969517": "Developer",
+                "9845295400": "Kamal Sir",
+                "9980304157": "Uday Sir"
+            }};
+
+            function checkAuth() {{
+                let phone = localStorage.getItem("tender_user_phone");
+                const urlParams = new URLSearchParams(window.location.search);
+                const p = urlParams.get('phone');
+                if (p) phone = p.replace(/\\D/g, '').slice(-10);
+
+                if (phone && AUTH_MEMBERS[phone]) {{
+                    recordRejection(AUTH_MEMBERS[phone]);
+                }} else {{
+                    document.getElementById('auth-gate').style.display = 'block';
+                }}
+            }}
+
+            function verifyPhone() {{
+                const input = document.getElementById('phone-input');
+                const err = document.getElementById('auth-error');
+                const phone = input.value.replace(/\\D/g, '').slice(-10);
+
+                if (AUTH_MEMBERS[phone]) {{
+                    localStorage.setItem("tender_user_phone", phone);
+                    document.getElementById('auth-gate').style.display = 'none';
+                    recordRejection(AUTH_MEMBERS[phone]);
+                }} else {{
+                    err.style.display = 'block';
+                    err.innerText = '❌ Access Denied: Unauthorized number.';
+                }}
+            }}
+
+            function recordRejection(userName) {{
+                document.getElementById('auth-gate').style.display = 'none';
+                document.getElementById('reject-card').style.display = 'block';
+                document.getElementById('user-display').innerText = userName;
+
+                fetch('/api/record_dontbid', {{
+                    method: 'POST',
+                    headers: {{'Content-Type': 'application/json'}},
+                    body: JSON.stringify({{
+                        tender_no: '{tender_no}',
+                        approved_by: userName
+                    }})
+                }});
+
+                const waText = `🚫 *TENDER DECISION — NOT BID*\n\n` +
+                               `📌 *Tender:* {tender_no}\n` +
+                               `🏢 *Status:* Rejected / Moved to Not Done\n` +
+                               `👤 *Decision By:* ${{userName}}\n\n` +
+                               `_Recorded in system._`;
+                const waUrl = 'https://api.whatsapp.com/send?text=' + encodeURIComponent(waText);
+                document.getElementById('wa-btn').href = waUrl;
+                setTimeout(function() {{
+                    window.location.href = waUrl;
+                }}, 700);
+            }}
+
+            checkAuth();
         </script>
     </body>
     </html>
     """
+
+@app.route("/api/record_dontbid", methods=["POST"])
+def record_dontbid_api():
+    data = request.get_json() or {}
+    tender_no = (data.get("tender_no") or "").strip().upper()
+    user_name = (data.get("approved_by") or "Kamal Sir").strip()
+    if tender_no:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("""
+        INSERT INTO pending_sync (action_type, tender_no, data_json, synced)
+        VALUES ('NOT_BID', ?, ?, 0)
+        """, (tender_no, json.dumps({"tender_no": tender_no, "action": "NOT_BID", "approved_by": user_name})))
+        conn.commit()
+        conn.close()
+        return jsonify({"status": "ok"})
+    return jsonify({"status": "error"}), 400
 
 @app.route("/api/add_manufacturer", methods=["POST"])
 def add_mfg_api():
