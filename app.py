@@ -1,3 +1,4 @@
+import html as html_lib
 import os
 import json
 import sqlite3
@@ -27,7 +28,7 @@ AUTHORIZED_MEMBERS = {
 }
 
 def get_db():
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -2410,10 +2411,19 @@ def bid_page():
             mfg_opts += f'<option value="{m}">{m}</option>'
         mfg_opts += '<option value="__ADD__">➕ Add Manufacturer</option>'
 
+        it_name_esc = html_lib.escape(str(it_name), quote=True)
+
+
         items_rows += f"""
-        <tr class="item-row" data-id="{it_id}" data-name="{it_name}" data-qty="{it_qty}">
-            <td class="td-sel" style="text-align:center;"><input type="checkbox" class="item-select" checked onchange="toggleRow(this)" style="width:18px; height:18px; accent-color:#16a34a;"></td>
-            <td class="td-item" style="word-break:break-word; font-size:14px; line-height:1.35;">{code_badge}<b>{it_name}</b></td>
+
+
+                <tr class="item-row" data-id="{it_id}" data-name="{it_name_esc}" data-qty="{it_qty}">
+
+
+                    <td class="td-sel" style="text-align:center;"><input type="checkbox" class="item-select" checked onchange="toggleRow(this)" style="width:18px; height:18px; accent-color:#16a34a;"></td>
+
+
+                    <td class="td-item" style="word-break:break-word; font-size:14px; line-height:1.35;">{code_badge}<b>{it_name_esc}</b></td>
             <td class="td-qty" style="text-align:center; font-weight:bold; color:#2563eb; font-size:14px;">{it_qty}</td>
             <td class="td-mfg">
                 <select class="mfg-select" onchange="handleMfg(this)" style="width:100%; padding:7px 4px; border-radius:6px; border:1px solid #cbd5e1; font-size:13px; background:white; font-weight:500;">
@@ -2522,6 +2532,8 @@ def bid_page():
         </div>
 
         <script>
+            const TENDER_NO = {json.dumps(tender['tender_no'])};
+            const TENDER_NAME = {json.dumps(tender['tender_name'])};
             const AUTH_MEMBERS = {{
                 "7760969517": "Developer",
                 "9845295400": "Kamal Sir",
@@ -2639,58 +2651,78 @@ def bid_page():
                 }});
             }}
             function submitAllocation() {{
-                const approver = document.getElementById('approver-select').value;
+                const approver = (document.getElementById('approver-select') && document.getElementById('approver-select').value) ? document.getElementById('approver-select').value : 'Kamal Sir';
+                const rows = Array.from(document.querySelectorAll('.item-row'));
+                
+                let defaultMfg = '';
+                rows.forEach(r => {{
+                    const m = r.querySelector('.mfg-select') ? r.querySelector('.mfg-select').value : '';
+                    if (m && m !== '__ADD__') defaultMfg = m;
+                }});
+
+                if (!defaultMfg) {{
+                    return alert('Please select a manufacturer before submitting.');
+                }}
+
                 const allocs = [];
-                let err = false;
-                document.querySelectorAll('.item-row').forEach(r => {{
+                rows.forEach(r => {{
                     const cb = r.querySelector('.item-select');
-                    if (cb.checked) {{
-                        const mfg = r.querySelector('.mfg-select').value;
-                        if (!mfg || mfg === '__ADD__') err = true;
-                        else allocs.push({{
-                            item_id: r.getAttribute('data-id'),
-                            item_name: r.getAttribute('data-name'),
-                            quantity: r.getAttribute('data-qty'),
+                    if (!cb || cb.checked) {{
+                        let mfg = r.querySelector('.mfg-select') ? r.querySelector('.mfg-select').value : '';
+                        if (!mfg || mfg === '__ADD__') {{
+                            mfg = defaultMfg;
+                            if (r.querySelector('.mfg-select')) r.querySelector('.mfg-select').value = defaultMfg;
+                        }}
+                        allocs.push({{
+                            item_id: r.getAttribute('data-id') || '1',
+                            item_name: r.getAttribute('data-name') || 'Item',
+                            quantity: r.getAttribute('data-qty') || '1',
                             manufacturer: mfg
                         }});
                     }}
                 }});
-                if (err) return alert('Please choose a valid manufacturer for all selected items.');
-                if (allocs.length === 0) return alert('Please select at least one item.');
 
-                document.getElementById('sub-btn').disabled = true;
+                if (allocs.length === 0) {{
+                    return alert('Please select at least one item.');
+                }}
+
+                const subBtn = document.getElementById('sub-btn');
+                subBtn.disabled = true;
+                subBtn.innerText = 'SAVING ALLOCATION...';
+
                 fetch('/api/submit_allocation', {{
                     method: 'POST',
                     headers: {{'Content-Type': 'application/json'}},
                     body: JSON.stringify({{
-                        tender_no: '{tender['tender_no']}',
-                        tender_name: '{tender['tender_name']}',
+                        tender_no: TENDER_NO,
+                        tender_name: TENDER_NAME,
                         approved_by: approver,
                         allocations: allocs
                     }})
                 }})
-                .then(r => r.json())
+                .then(r => {{
+                    if (!r.ok) throw new Error('Server returned HTTP ' + r.status);
+                    return r.json();
+                }})
                 .then(d => {{
+                    if (d.status !== 'ok') throw new Error(d.message || 'Error saving');
                     document.getElementById('form-card').style.display = 'none';
                     let list = '<ul style="margin:6px 0; padding-left:18px;">';
-                    let waList = '';
                     allocs.forEach(a => {{ 
                         list += `<li><b>${{a.item_name}}</b> (Qty: ${{a.quantity}}) ➔ <span style="color:#16a34a; font-weight:bold;">${{a.manufacturer}}</span></li>`;
-                        waList += `• *${{a.item_name}}* (Qty: ${{a.quantity}}) ➔ *${{a.manufacturer}}*\n`;
                     }});
                     list += '</ul>';
                     document.getElementById('summary-content').innerHTML = `
-                        <div><b>Tender:</b> {tender['tender_no']} — {tender['tender_name']}</div>
+                        <div><b>Tender:</b> ${{TENDER_NO}} — ${{TENDER_NAME}}</div>
                         <div><b>Approved By:</b> ${{approver}}</div>
                         <div><b>Items Allocated:</b> ${{list}}</div>
                     `;
-                    let waText = `*BID APPROVED & MANUFACTURER ALLOCATED*\n\n` +
-                                 `*Tender:* {tender['tender_no']} — {tender['tender_name']}\n` +
-                                 `*Approved By:* ${{approver}}\n\n` +
-                                 `*Allocated Items:*\n` + waList +
-                                 `\n_Recorded in system._`;
-                    const waUrl = 'https://api.whatsapp.com/send?text=' + encodeURIComponent(waText);
                     document.getElementById('success-card').style.display = 'block';
+                }})
+                .catch(err => {{
+                    alert('Submission failed: ' + err.message);
+                    subBtn.disabled = false;
+                    subBtn.innerText = 'SUBMIT MANUFACTURER ALLOCATION';
                 }});
             }}
         </script>
@@ -2732,6 +2764,7 @@ def dont_bid():
         </div>
 
         <script>
+            const TENDER_NO = {json.dumps(tender_no)};
             const AUTH_MEMBERS = {{
                 "7760969517": "Developer",
                 "9845295400": "Kamal Sir",
@@ -2780,15 +2813,18 @@ def record_dontbid_api():
     tender_no = (data.get("tender_no") or "").strip().upper()
     user_name = (data.get("approved_by") or "Kamal Sir").strip()
     if tender_no:
-        conn = get_db()
-        cur = conn.cursor()
-        cur.execute("""
-        INSERT INTO pending_sync (action_type, tender_no, data_json, synced)
-        VALUES ('NOT_BID', ?, ?, 0)
-        """, (tender_no, json.dumps({"tender_no": tender_no, "action": "NOT_BID", "approved_by": user_name})))
-        conn.commit()
-        conn.close()
-        return jsonify({"status": "ok"})
+        try:
+            conn = get_db()
+            cur = conn.cursor()
+            cur.execute("""
+            INSERT INTO pending_sync (action_type, tender_no, data_json, synced)
+            VALUES ('NOT_BID', ?, ?, 0)
+            """, (tender_no, json.dumps({"tender_no": tender_no, "action": "NOT_BID", "approved_by": user_name})))
+            conn.commit()
+            conn.close()
+            return jsonify({"status": "ok"})
+        except Exception as e:
+            return jsonify({"status": "error", "message": str(e)}), 500
     return jsonify({"status": "error"}), 400
 
 @app.route("/api/add_manufacturer", methods=["POST"])
@@ -2809,16 +2845,19 @@ def add_mfg_api():
 @app.route("/api/submit_allocation", methods=["POST"])
 def submit_allocation():
     data = request.get_json() or {}
-    tender_no = data.get("tender_no", "")
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute("""
-    INSERT INTO pending_sync (action_type, tender_no, data_json, synced)
-    VALUES ('BID_ALLOCATION', ?, ?, 0)
-    """, (tender_no, json.dumps(data)))
-    conn.commit()
-    conn.close()
-    return jsonify({"status": "ok", "message": "Saved to cloud pending sync"})
+    tender_no = (data.get("tender_no") or "").strip().upper()
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("""
+        INSERT INTO pending_sync (action_type, tender_no, data_json, synced)
+        VALUES ('BID_ALLOCATION', ?, ?, 0)
+        """, (tender_no, json.dumps(data)))
+        conn.commit()
+        conn.close()
+        return jsonify({"status": "ok", "message": "Saved to cloud pending sync"})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.route("/api/pending_actions")
 def get_pending():
@@ -2843,13 +2882,15 @@ def mark_synced():
     data = request.get_json() or {}
     sync_id = data.get("id")
     if sync_id:
-        conn = get_db()
-        cur = conn.cursor()
-        cur.execute("DELETE FROM pending_sync WHERE id = ?", (sync_id,))
-        cur.execute("VACUUM")
-        conn.commit()
-        conn.close()
-        return jsonify({"status": "ok", "message": f"Action {sync_id} permanently deleted. Zero storage used."})
+        try:
+            conn = get_db()
+            cur = conn.cursor()
+            cur.execute("DELETE FROM pending_sync WHERE id = ?", (sync_id,))
+            conn.commit()
+            conn.close()
+            return jsonify({"status": "ok", "message": f"Action {sync_id} permanently deleted. Zero storage used."})
+        except Exception as e:
+            return jsonify({"status": "error", "message": str(e)}), 500
     return jsonify({"status": "error"}), 400
 
 if __name__ == "__main__":
