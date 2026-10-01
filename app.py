@@ -131,8 +131,8 @@ AUTH_GATE_HTML = """<!DOCTYPE html>
 <body>
     <main class="card">
         <h2>San Tenders secure access</h2>
-        <p id="status">Enter your private access code to continue.</p>
-        <form id="login-form">
+        <p id="status" role="status" aria-live="polite">Checking saved access…</p>
+        <form id="login-form" style="display:none">
             <label for="access-code">Member access code</label>
             <input id="access-code" type="password" autocomplete="current-password"
                    required minlength="24" style="box-sizing:border-box;width:100%;padding:12px;margin:12px 0;border:1px solid #cbd5e1;border-radius:6px">
@@ -141,8 +141,15 @@ AUTH_GATE_HTML = """<!DOCTYPE html>
     </main>
     <script>
         let reopeningTender = false;
+        let checkingSession = false;
+        function showSignIn(message) {
+            document.getElementById("status").textContent = message;
+            document.getElementById("login-form").style.display = "block";
+        }
+
         async function reopenIfAlreadySignedIn() {
-            if (reopeningTender) return;
+            if (reopeningTender || checkingSession) return;
+            checkingSession = true;
             try {
                 const response = await fetch("/api/auth/status", {
                     credentials: "same-origin",
@@ -152,10 +159,13 @@ AUTH_GATE_HTML = """<!DOCTYPE html>
                 if (response.ok && result.authenticated) {
                     reopeningTender = true;
                     window.location.reload();
+                    return;
                 }
+                showSignIn("Enter your private access code to continue.");
             } catch (error) {
-                document.getElementById("status").textContent =
-                    "Could not check saved sign-in. You can still enter your access code.";
+                showSignIn("Could not check saved sign-in. You can still enter your access code.");
+            } finally {
+                checkingSession = false;
             }
         }
 

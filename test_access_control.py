@@ -56,7 +56,9 @@ class MemberAccessControlTests(unittest.TestCase):
 
     def test_pages_and_decision_apis_require_member_session(self):
         gate = self.client.get("/bid?tender=IND2708")
-        self.assertIn(b"Member access code", gate.data)
+        self.assertIn(b"Checking saved access", gate.data)
+        self.assertIn(b'id="login-form" style="display:none"', gate.data)
+        self.assertIn(b"Enter your private access code", gate.data)
         self.assertIn(b"pageshow", gate.data)
         self.assertEqual(gate.headers["Cache-Control"], "no-store")
         self.assertIn(b"Member access code", self.client.get("/dontbid").data)
