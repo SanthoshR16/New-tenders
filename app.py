@@ -2507,10 +2507,7 @@ def bid_page():
             <h2 style="color: #166534; margin: 0 0 10px 0;">Manufacturer Allocation Saved</h2>
             <p style="color: #475569;">Recorded successfully. When local PC syncs, it updates local files & database.</p>
             <div id="summary-content" style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:15px; text-align:left; margin: 20px auto; max-width:500px;"></div>
-            <a id="wa-share-btn" href="#" target="_blank" style="display:inline-block; margin-top:10px; background:#25D366; color:white; padding:14px 24px; border-radius:8px; text-decoration:none; font-weight:bold; font-size:16px; box-shadow: 0 2px 8px rgba(37,211,102,0.3);">
-                💬 Share Confirmation to WhatsApp Group
-            </a>
-            <div style="margin-top:15px; font-size:13px; color:#16a34a; font-weight:600;">Status: Submitted & Persisted 24/7</div>
+            <div style="margin-top:15px; font-size:13px; color:#16a34a; font-weight:600;">Decision saved. WhatsApp notification will be sent automatically.</div>
         </div>
 
         <div class="modal" id="add-modal">
@@ -2693,11 +2690,7 @@ def bid_page():
                                  `*Allocated Items:*\n` + waList +
                                  `\n_Recorded in system._`;
                     const waUrl = 'https://api.whatsapp.com/send?text=' + encodeURIComponent(waText);
-                    document.getElementById('wa-share-btn').href = waUrl;
                     document.getElementById('success-card').style.display = 'block';
-                    setTimeout(function() {{
-                        window.location.href = waUrl;
-                    }}, 700);
                 }});
             }}
         </script>
@@ -2736,10 +2729,6 @@ def dont_bid():
             <h1 style="color: #dc2626; margin: 0 0 10px 0; font-size: 24px;">🚫 MOVED TO NOT DONE</h1>
             <p style="font-size: 16px;">Tender <b>{tender_no}</b> recorded as NOT BID.</p>
             <p style="color: #64748b; font-size: 14px;">Decision by: <b id="user-display" style="color:#0f172a;"></b></p>
-            <p style="color: #16a34a; font-weight: 600; font-size: 14px;">Redirecting to WhatsApp...</p>
-            <a id="wa-btn" href="#" target="_blank" style="display:inline-block; margin-top:15px; background:#25D366; color:white; padding:12px 20px; border-radius:8px; text-decoration:none; font-weight:bold; font-size:15px;">
-                💬 Share to WhatsApp Group
-            </a>
         </div>
 
         <script>
@@ -2777,16 +2766,6 @@ def dont_bid():
                     }})
                 }});
 
-                const waText = `🚫 *TENDER DECISION — NOT BID*\n\n` +
-                               `📌 *Tender:* {tender_no}\n` +
-                               `🏢 *Status:* Rejected / Moved to Not Done\n` +
-                               `👤 *Decision By:* ${{userName}}\n\n` +
-                               `_Recorded in system._`;
-                const waUrl = 'https://api.whatsapp.com/send?text=' + encodeURIComponent(waText);
-                document.getElementById('wa-btn').href = waUrl;
-                setTimeout(function() {{
-                    window.location.href = waUrl;
-                }}, 700);
             }}
 
             checkAuth();
