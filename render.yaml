@@ -13,3 +13,7 @@ services:
         sync: false
       - key: UDAY_SIR_ACCESS_CODE
         sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false

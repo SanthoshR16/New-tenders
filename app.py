@@ -4,11 +4,14 @@ import json
 import sqlite3
 import base64
 import urllib.parse
+import urllib.error
+import urllib.request
 import hashlib
 import hmac
 import secrets
+import time
 from functools import wraps
-from datetime import datetime
+from datetime import datetime, timezone
 from flask import Flask, request, jsonify, render_template_string, session
 
 app = Flask(__name__)
@@ -70,6 +73,21 @@ def init_db():
         synced INTEGER DEFAULT 0
     )
     """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS telegram_outbox (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        action_id INTEGER NOT NULL,
+        chunk_index INTEGER NOT NULL DEFAULT 0,
+        message_html TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        sent_at TIMESTAMP,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        retry_after REAL NOT NULL DEFAULT 0,
+        claimed_until REAL,
+        last_error TEXT,
+        UNIQUE(action_id, chunk_index)
+    )
+    """)
     for m in INITIAL_MANUFACTURERS:
         cur.execute("INSERT OR IGNORE INTO manufacturers (name) VALUES (?)", (m,))
     for a in INITIAL_APPROVERS:
@@ -113,6 +131,184 @@ def require_member(view):
             return jsonify({"status": "error", "message": "This device is not authorized."}), 401
         return view(*args, **kwargs)
     return wrapped
+
+
+def _telegram_credentials():
+    token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+    chat_id = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
+    return token, chat_id
+
+
+def _telegram_escape(value):
+    return html_lib.escape("" if value is None else str(value), quote=False)
+
+
+def _telegram_decision_message(action_type, data):
+    tender_no = _telegram_escape(data.get("tender_no"))
+    tender_name = _telegram_escape(data.get("tender_name"))
+    approved_by = _telegram_escape(data.get("approved_by"))
+    if action_type == "BID_ALLOCATION":
+        lines = [
+            "✅ <b>BID APPROVED &amp; MANUFACTURER ALLOCATED</b>",
+            "",
+            f"📌 <b>Tender:</b> {tender_no}"
+            + (f" - {tender_name}" if tender_name and tender_name != tender_no else ""),
+            f"👤 <b>Approved By:</b> {approved_by}",
+            "",
+            "🏭 <b>Allocations:</b>",
+        ]
+        allocations = data.get("allocations") or []
+        if not isinstance(allocations, list):
+            raise ValueError("Allocation data must be a list.")
+        for allocation in allocations:
+            if not isinstance(allocation, dict):
+                raise ValueError("Each allocation must be an object.")
+            item_name = _telegram_escape(allocation.get("item_name"))
+            quantity = _telegram_escape(allocation.get("quantity", 1))
+            manufacturer = _telegram_escape(allocation.get("manufacturer"))
+            lines.append(f"  • <b>{item_name}</b> (Qty: {quantity}) ➔ <b>{manufacturer}</b>")
+        lines.extend(("", "<i>Saved in cloud; local system updates on its next sync.</i>"))
+    elif action_type == "NOT_BID":
+        lines = [
+            "🚫 <b>TENDER DECISION — NOT BID</b>",
+            "",
+            f"📌 <b>Tender:</b> {tender_no}"
+            + (f" - {tender_name}" if tender_name and tender_name != tender_no else ""),
+            "🏢 <b>Status:</b> Rejected / Moved to Not Done",
+            f"👤 <b>Decision By:</b> {approved_by}",
+            "",
+            "<i>Saved in cloud; local system updates on its next sync.</i>",
+        ]
+    else:
+        raise ValueError(f"Unsupported Telegram decision type: {action_type!r}")
+
+    message = "\n".join(lines)
+    if len(message) > 4000:
+        raise ValueError("Decision message exceeds Telegram's safe message length.")
+    return message
+
+
+def _claim_telegram_message():
+    now = time.time()
+    conn = get_db()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute("""
+            SELECT id, action_id, message_html, attempts
+            FROM telegram_outbox
+            WHERE sent_at IS NULL
+              AND retry_after <= ?
+              AND (claimed_until IS NULL OR claimed_until < ?)
+            ORDER BY id ASC
+            LIMIT 1
+        """, (now, now)).fetchone()
+        if row is None:
+            conn.commit()
+            return None
+        conn.execute(
+            "UPDATE telegram_outbox SET claimed_until = ?, attempts = attempts + 1 WHERE id = ?",
+            (now + 30, row["id"]),
+        )
+        conn.commit()
+        return dict(row)
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def flush_telegram_outbox(limit=10):
+    token, chat_id = _telegram_credentials()
+    if not token or not chat_id:
+        return 0
+
+    sent_count = 0
+    for _ in range(limit):
+        row = _claim_telegram_message()
+        if row is None:
+            break
+
+        payload = json.dumps({
+            "chat_id": chat_id,
+            "text": row["message_html"],
+            "parse_mode": "HTML",
+            "disable_web_page_preview": True,
+        }).encode("utf-8")
+        request = urllib.request.Request(
+            f"https://api.telegram.org/bot{token}/sendMessage",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        error = ""
+        try:
+            with urllib.request.urlopen(request, timeout=10) as response:
+                result = json.loads(response.read().decode("utf-8"))
+            if not isinstance(result, dict) or result.get("ok") is not True:
+                error = "Telegram API rejected the message."
+        except urllib.error.HTTPError as exc:
+            error = f"Telegram HTTP error {exc.code}."
+        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+            error = f"Telegram network error: {exc.__class__.__name__}."
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            error = f"Invalid Telegram response: {exc.__class__.__name__}."
+
+        conn = get_db()
+        try:
+            if error:
+                attempts = row["attempts"] + 1
+                retry_after = time.time() + min(15 * (2 ** attempts), 900)
+                conn.execute("""
+                    UPDATE telegram_outbox
+                    SET claimed_until = NULL, retry_after = ?, last_error = ?
+                    WHERE id = ? AND sent_at IS NULL
+                """, (retry_after, error, row["id"]))
+                conn.commit()
+                print(f"[TELEGRAM ERROR] Decision notification {row['action_id']} remains queued: {error}")
+                break
+            conn.execute("""
+                UPDATE telegram_outbox
+                SET sent_at = ?, claimed_until = NULL, last_error = NULL
+                WHERE id = ? AND sent_at IS NULL
+            """, (datetime.now(timezone.utc).isoformat(), row["id"]))
+            conn.commit()
+            sent_count += 1
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+    return sent_count
+
+
+def _enqueue_telegram_decision(conn, action_id, action_type, data):
+    token, chat_id = _telegram_credentials()
+    if not token or not chat_id:
+        print("[TELEGRAM CONFIG] Decision saved, but TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID is not configured.")
+        return "not_configured"
+
+    message = _telegram_decision_message(action_type, data)
+    conn.execute("""
+        INSERT OR IGNORE INTO telegram_outbox (action_id, chunk_index, message_html)
+        VALUES (?, 0, ?)
+    """, (action_id, message))
+    return "pending"
+
+
+def _deliver_telegram_decision(action_id):
+    flush_telegram_outbox()
+    conn = get_db()
+    try:
+        row = conn.execute(
+            "SELECT sent_at FROM telegram_outbox WHERE action_id = ? AND chunk_index = 0",
+            (action_id,),
+        ).fetchone()
+        if row is None:
+            raise RuntimeError(f"Telegram outbox entry missing for decision {action_id}.")
+        return "sent" if row["sent_at"] else "pending"
+    finally:
+        conn.close()
 
 
 AUTH_GATE_HTML = """<!DOCTYPE html>
@@ -2645,7 +2841,7 @@ def bid_page():
             <h2 style="color: #166534; margin: 0 0 10px 0;">Manufacturer Allocation Saved</h2>
             <p style="color: #475569;">Recorded successfully. When local PC syncs, it updates local files & database.</p>
             <div id="summary-content" style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:15px; text-align:left; margin: 20px auto; max-width:500px;"></div>
-            <div style="margin-top:15px; font-size:13px; color:#16a34a; font-weight:600;">Decision saved. WhatsApp notification will be sent automatically.</div>
+            <div id="telegram-status" style="margin-top:15px; font-size:13px; color:#16a34a; font-weight:600;">Decision saved.</div>
         </div>
 
         <div class="modal" id="add-modal">
@@ -2782,6 +2978,16 @@ def bid_page():
                         <div><b>Approved By:</b> ${{approver}}</div>
                         <div><b>Items Allocated:</b> ${{list}}</div>
                     `;
+                    const telegramStatus = document.getElementById('telegram-status');
+                    if (d.telegram_status === 'sent') {{
+                        telegramStatus.textContent = 'Decision saved and sent to the Telegram group.';
+                    }} else if (d.telegram_status === 'pending') {{
+                        telegramStatus.textContent = 'Decision saved. Telegram delivery is queued for retry.';
+                        telegramStatus.style.color = '#b45309';
+                    }} else {{
+                        telegramStatus.textContent = 'Decision saved, but Telegram is not configured on the server yet.';
+                        telegramStatus.style.color = '#b91c1c';
+                    }}
                     document.getElementById('success-card').style.display = 'block';
                 }})
                 .catch(err => {{
@@ -2822,6 +3028,7 @@ def dont_bid():
             <h1 style="color: #dc2626; margin: 0 0 10px 0; font-size: 24px;">🚫 MOVED TO NOT DONE</h1>
             <p style="font-size: 16px;">Tender <b>{tender_no}</b> recorded as NOT BID.</p>
             <p style="color: #64748b; font-size: 14px;">Decision by: <b id="user-display" style="color:#0f172a;">{authorized_role}</b></p>
+            <p id="telegram-status" style="font-size:14px; font-weight:600;"></p>
         </div>
 
         <script>
@@ -2841,10 +3048,18 @@ def dont_bid():
                     }})
                 }})
                 .then(async response => {{
-                    if (!response.ok) {{
-                        const result = await response.json();
+                    const result = await response.json();
+                    if (!response.ok || result.status !== 'ok') {{
                         throw new Error(result.message || 'Decision could not be saved.');
                     }}
+                    const telegramStatus = document.getElementById('telegram-status');
+                    telegramStatus.textContent = result.telegram_status === 'sent'
+                        ? 'Confirmation sent to the Telegram group.'
+                        : result.telegram_status === 'pending'
+                            ? 'Confirmation saved and queued for Telegram retry.'
+                            : 'Decision saved, but Telegram is not configured on the server yet.';
+                    telegramStatus.style.color = result.telegram_status === 'sent' ? '#15803d'
+                        : result.telegram_status === 'pending' ? '#b45309' : '#b91c1c';
                 }})
                 .catch(error => {{
                     document.getElementById('reject-card').innerHTML =
@@ -2902,15 +3117,32 @@ def record_dontbid_api():
     user_name = _current_member()
     if tender_no:
         try:
+            decision_data = {
+                "tender_no": tender_no,
+                "action": "NOT_BID",
+                "approved_by": user_name,
+            }
+            _telegram_decision_message("NOT_BID", decision_data)
             conn = get_db()
-            cur = conn.cursor()
-            cur.execute("""
-            INSERT INTO pending_sync (action_type, tender_no, data_json, synced)
-            VALUES ('NOT_BID', ?, ?, 0)
-            """, (tender_no, json.dumps({"tender_no": tender_no, "action": "NOT_BID", "approved_by": user_name})))
-            conn.commit()
-            conn.close()
-            return jsonify({"status": "ok"})
+            try:
+                cur = conn.cursor()
+                cur.execute("""
+                INSERT INTO pending_sync (action_type, tender_no, data_json, synced)
+                VALUES ('NOT_BID', ?, ?, 0)
+                """, (tender_no, json.dumps(decision_data)))
+                action_id = cur.lastrowid
+                telegram_status = _enqueue_telegram_decision(
+                    conn, action_id, "NOT_BID", decision_data
+                )
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+            finally:
+                conn.close()
+            if telegram_status == "pending":
+                telegram_status = _deliver_telegram_decision(action_id)
+            return jsonify({"status": "ok", "telegram_status": telegram_status})
         except Exception as e:
             return jsonify({"status": "error", "message": str(e)}), 500
     return jsonify({"status": "error"}), 400
@@ -2938,20 +3170,37 @@ def submit_allocation():
     tender_no = (data.get("tender_no") or "").strip().upper()
     data["approved_by"] = _current_member()
     try:
+        _telegram_decision_message("BID_ALLOCATION", data)
         conn = get_db()
-        cur = conn.cursor()
-        cur.execute("""
-        INSERT INTO pending_sync (action_type, tender_no, data_json, synced)
-        VALUES ('BID_ALLOCATION', ?, ?, 0)
-        """, (tender_no, json.dumps(data)))
-        conn.commit()
-        conn.close()
-        return jsonify({"status": "ok", "message": "Saved to cloud pending sync"})
+        try:
+            cur = conn.cursor()
+            cur.execute("""
+            INSERT INTO pending_sync (action_type, tender_no, data_json, synced)
+            VALUES ('BID_ALLOCATION', ?, ?, 0)
+            """, (tender_no, json.dumps(data)))
+            action_id = cur.lastrowid
+            telegram_status = _enqueue_telegram_decision(
+                conn, action_id, "BID_ALLOCATION", data
+            )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+        if telegram_status == "pending":
+            telegram_status = _deliver_telegram_decision(action_id)
+        return jsonify({
+            "status": "ok",
+            "message": "Saved to cloud pending sync",
+            "telegram_status": telegram_status,
+        })
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.route("/api/pending_actions")
 def get_pending():
+    flush_telegram_outbox()
     conn = get_db()
     cur = conn.cursor()
     cur.execute("SELECT id, action_type, tender_no, data_json, created_at FROM pending_sync WHERE synced = 0 ORDER BY id ASC")
