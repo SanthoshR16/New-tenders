@@ -4,12 +4,22 @@ import json
 import sqlite3
 import base64
 import urllib.parse
+import hashlib
+import hmac
+import secrets
+from functools import wraps
 from datetime import datetime
-from flask import Flask, request, jsonify, render_template_string
+from flask import Flask, request, jsonify, render_template_string, session
 
 app = Flask(__name__)
 
 DB_PATH = os.environ.get("DB_PATH", "cloud_tenders.db")
+AUTHORIZED_ROLES = ("Developer", "Kamal Sir", "Uday Sir")
+AUTH_CODE_ENV = {
+    "Developer": "DEVELOPER_ACCESS_CODE",
+    "Kamal Sir": "KAMAL_SIR_ACCESS_CODE",
+    "Uday Sir": "UDAY_SIR_ACCESS_CODE",
+}
 
 INITIAL_MANUFACTURERS = [
     "GMPL", "Adonis", "Advantage", "Sysmed", "Appasamy", "Shalya",
@@ -19,13 +29,7 @@ INITIAL_MANUFACTURERS = [
     "IFB", "Cnergy", "Clarity", "Radical", "Pridex", "Swemed", "Anand Agencies"
 ]
 
-INITIAL_APPROVERS = ["Kamal Sir", "Uday Sir", "Developer"]
-
-AUTHORIZED_MEMBERS = {
-    "7760969517": "Developer",
-    "9845295400": "Kamal Sir",
-    "9980304157": "Uday Sir"
-}
+INITIAL_APPROVERS = list(AUTHORIZED_ROLES)
 
 def get_db():
     conn = sqlite3.connect(DB_PATH, timeout=30)
@@ -73,6 +77,103 @@ def init_db():
     conn.commit()
     conn.close()
 
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SECURE=True,
+    SESSION_COOKIE_SAMESITE="Strict",
+    PERMANENT_SESSION_LIFETIME=60 * 60 * 24 * 180,
+)
+
+
+def _configured_access_codes():
+    codes = {role: os.environ.get(env_name, "").strip() for role, env_name in AUTH_CODE_ENV.items()}
+    if any(len(code) < 24 or not code.isascii() for code in codes.values()):
+        return None
+    return codes
+
+
+def _configure_session_secret():
+    codes = _configured_access_codes()
+    if codes:
+        material = "\n".join(codes[role] for role in AUTHORIZED_ROLES)
+        app.secret_key = hashlib.sha256(("san-tenders-session:" + material).encode("utf-8")).hexdigest()
+    else:
+        app.secret_key = secrets.token_urlsafe(48)
+
+
+def _current_member():
+    role = session.get("authorized_role")
+    return role if role in AUTHORIZED_ROLES else None
+
+
+def require_member(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not _current_member():
+            return jsonify({"status": "error", "message": "This device is not authorized."}), 401
+        return view(*args, **kwargs)
+    return wrapped
+
+
+AUTH_GATE_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>San Tenders — Member Sign In</title>
+    <style>
+        body { font-family: "Segoe UI", sans-serif; background: #f1f5f9; color: #0f172a; }
+        .card { max-width: 420px; margin: 12vh auto; padding: 28px; background: white;
+                border-radius: 12px; box-shadow: 0 8px 30px #0f172a18; text-align: center; }
+        #status { color: #475569; line-height: 1.5; }
+    </style>
+</head>
+<body>
+    <main class="card">
+        <h2>San Tenders secure access</h2>
+        <p id="status">Enter your private access code to continue.</p>
+        <form id="login-form">
+            <label for="access-code">Member access code</label>
+            <input id="access-code" type="password" autocomplete="current-password"
+                   required minlength="24" style="box-sizing:border-box;width:100%;padding:12px;margin:12px 0;border:1px solid #cbd5e1;border-radius:6px">
+            <button type="submit" style="width:100%;padding:12px;background:#2563eb;color:white;border:0;border-radius:6px;font-weight:700">Continue</button>
+        </form>
+    </main>
+    <script>
+        document.getElementById("login-form").addEventListener("submit", async event => {
+            event.preventDefault();
+            const status = document.getElementById("status");
+            const button = event.currentTarget.querySelector("button");
+            button.disabled = true;
+            try {
+                const response = await fetch("/api/auth/login", {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({access_code: document.getElementById("access-code").value}),
+                    credentials: "same-origin"
+                });
+                const result = await response.json();
+                if (!response.ok) {
+                    status.textContent = result.message || "This device is not authorized.";
+                    button.disabled = false;
+                    return;
+                }
+                status.textContent = "Access confirmed for " + result.role + ". Opening tender…";
+                window.location.reload();
+            } catch (error) {
+                status.textContent = "Could not sign in. Check your connection and retry.";
+                button.disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>"""
+
+
+def auth_gate_response():
+    return render_template_string(AUTH_GATE_HTML)
+
+_configure_session_secret()
 init_db()
 
 TENDER_CATALOG = {
@@ -2342,6 +2443,10 @@ def register_tender_api():
 
 @app.route("/bid")
 def bid_page():
+    authorized_role = _current_member()
+    if not authorized_role:
+        return auth_gate_response()
+
     raw_tender = request.args.get("tender") or request.args.get("id") or "IND2414"
     tender_no = raw_tender.strip().upper()
 
@@ -2473,17 +2578,6 @@ def bid_page():
         </style>
     </head>
     <body>
-        <!-- AUTHORIZATION GATE -->
-        <!-- AUTHORIZATION GATE -->
-        <div class="card" id="auth-gate" style="display:none; max-width:440px; margin:40px auto; padding:25px; text-align:center;">
-            <h2 style="margin: 0 0 12px 0; font-size: 20px; color:#0f172a;">Who are you?</h2>
-            <p style="color: #64748b; font-size: 14px; margin-bottom: 18px;">Tap your name to continue:</p>
-            <button type="button" onclick="pickUser('9845295400','Kamal Sir')" style="width:100%; background:#16a34a; color:white; border:none; padding:14px; font-size:16px; font-weight:700; border-radius:8px; cursor:pointer; margin-bottom:10px;">Kamal Sir</button>
-            <button type="button" onclick="pickUser('9980304157','Uday Sir')" style="width:100%; background:#2563eb; color:white; border:none; padding:14px; font-size:16px; font-weight:700; border-radius:8px; cursor:pointer; margin-bottom:10px;">Uday Sir</button>
-            <button type="button" onclick="pickUser('7760969517','Developer')" style="width:100%; background:#7c3aed; color:white; border:none; padding:14px; font-size:16px; font-weight:700; border-radius:8px; cursor:pointer;">Developer</button>
-        </div>
-
-
         <div class="card" id="form-card" style="display:none;">
             <div class="hdr">
                 <span class="badge">🟢 BID APPROVED</span>
@@ -2491,8 +2585,8 @@ def bid_page():
                 <div style="font-size: 14px; opacity: 0.9;">Tender: {tender['tender_no']} | Dept: {tender['department']}</div>
             </div>
             <div class="approver-bar">
-                <div style="font-size: 14px;"><b>👤 Approver:</b> <span id="approver-display" style="font-weight:700; color:#15803d; margin-left:6px;"></span></div>
-                <input type="hidden" id="approver-select" value="Kamal Sir">
+                <div style="font-size: 14px;"><b>👤 Approver:</b> <span id="approver-display" style="font-weight:700; color:#15803d; margin-left:6px;">{authorized_role}</span></div>
+                <input type="hidden" id="approver-select" value="{authorized_role}">
             </div>
             <div class="content-pad" style="padding: 15px 20px;">
                 {search_box_html}
@@ -2534,37 +2628,8 @@ def bid_page():
         <script>
             const TENDER_NO = {json.dumps(tender['tender_no'])};
             const TENDER_NAME = {json.dumps(tender['tender_name'])};
-            const AUTH_MEMBERS = {{
-                "7760969517": "Developer",
-                "9845295400": "Kamal Sir",
-                "9980304157": "Uday Sir"
-            }};
-
-            function checkAuth() {{
-                const phone = localStorage.getItem("tender_user_phone");
-                if (phone && AUTH_MEMBERS[phone]) {{
-                    grantAccess(phone, AUTH_MEMBERS[phone]);
-                }} else {{
-                    document.getElementById('auth-gate').style.display = 'block';
-                    document.getElementById('form-card').style.display = 'none';
-                }}
-            }}
-
-            function pickUser(phone, name) {{
-                localStorage.setItem("tender_user_phone", phone);
-                grantAccess(phone, name);
-            }}
-
-            function grantAccess(phone, name) {{
-                document.getElementById('auth-gate').style.display = 'none';
-                document.getElementById('form-card').style.display = 'block';
-                const hiddenApprover = document.getElementById('approver-select');
-                if (hiddenApprover) hiddenApprover.value = name;
-                const displayApprover = document.getElementById('approver-display');
-                if (displayApprover) displayApprover.innerText = name;
-            }}
-
-            checkAuth();
+            const AUTHORIZED_ROLE = {json.dumps(authorized_role)};
+            document.getElementById('form-card').style.display = 'block';
 
             let targetSelect = null;
             function filterItems() {{
@@ -2733,6 +2798,10 @@ def bid_page():
 
 @app.route("/dontbid")
 def dont_bid():
+    authorized_role = _current_member()
+    if not authorized_role:
+        return auth_gate_response()
+
     raw_tender = request.args.get("tender") or request.args.get("id") or "IND2414"
     tender_no = raw_tender.strip().upper()
 
@@ -2748,45 +2817,17 @@ def dont_bid():
         </style>
     </head>
     <body>
-        <div class="card" id="auth-gate" style="display:none;">
-            <h2 style="margin: 0 0 12px 0; font-size: 20px;">Who are you?</h2>
-            <p style="color: #64748b; font-size: 14px; margin-bottom: 18px;">Tap your name to confirm rejection:</p>
-            <button type="button" onclick="pickUser('9845295400','Kamal Sir')" style="width:100%; background:#16a34a; color:white; border:none; padding:14px; font-size:16px; font-weight:700; border-radius:8px; cursor:pointer; margin-bottom:10px;">Kamal Sir</button>
-            <button type="button" onclick="pickUser('9980304157','Uday Sir')" style="width:100%; background:#2563eb; color:white; border:none; padding:14px; font-size:16px; font-weight:700; border-radius:8px; cursor:pointer; margin-bottom:10px;">Uday Sir</button>
-            <button type="button" onclick="pickUser('7760969517','Developer')" style="width:100%; background:#7c3aed; color:white; border:none; padding:14px; font-size:16px; font-weight:700; border-radius:8px; cursor:pointer;">Developer</button>
-        </div>
-
-
         <div class="card" id="reject-card" style="display:none; background: #fff5f5; border-color: #fecaca;">
             <h1 style="color: #dc2626; margin: 0 0 10px 0; font-size: 24px;">🚫 MOVED TO NOT DONE</h1>
             <p style="font-size: 16px;">Tender <b>{tender_no}</b> recorded as NOT BID.</p>
-            <p style="color: #64748b; font-size: 14px;">Decision by: <b id="user-display" style="color:#0f172a;"></b></p>
+            <p style="color: #64748b; font-size: 14px;">Decision by: <b id="user-display" style="color:#0f172a;">{authorized_role}</b></p>
         </div>
 
         <script>
             const TENDER_NO = {json.dumps(tender_no)};
-            const AUTH_MEMBERS = {{
-                "7760969517": "Developer",
-                "9845295400": "Kamal Sir",
-                "9980304157": "Uday Sir"
-            }};
-
-            function checkAuth() {{
-                const phone = localStorage.getItem("tender_user_phone");
-                if (phone && AUTH_MEMBERS[phone]) {{
-                    recordRejection(AUTH_MEMBERS[phone]);
-                }} else {{
-                    document.getElementById('auth-gate').style.display = 'block';
-                }}
-            }}
-
-            function pickUser(phone, name) {{
-                localStorage.setItem("tender_user_phone", phone);
-                recordRejection(name);
-            }}
+            const userName = {json.dumps(authorized_role)};
 
             function recordRejection(userName) {{
-                document.getElementById('auth-gate').style.display = 'none';
                 document.getElementById('reject-card').style.display = 'block';
                 document.getElementById('user-display').innerText = userName;
 
@@ -2794,24 +2835,61 @@ def dont_bid():
                     method: 'POST',
                     headers: {{'Content-Type': 'application/json'}},
                     body: JSON.stringify({{
-                        tender_no: '{tender_no}',
+                        tender_no: TENDER_NO,
                         approved_by: userName
                     }})
+                }})
+                .then(async response => {{
+                    if (!response.ok) {{
+                        const result = await response.json();
+                        throw new Error(result.message || 'Decision could not be saved.');
+                    }}
+                }})
+                .catch(error => {{
+                    document.getElementById('reject-card').innerHTML =
+                        '<h2 style="color:#dc2626">Decision was not saved</h2><p>' +
+                        error.message + '</p>';
                 }});
 
             }}
 
-            checkAuth();
+            recordRejection(userName);
         </script>
     </body>
     </html>
     """
 
+@app.route("/api/auth/login", methods=["POST"])
+def login_member():
+    data = request.get_json(silent=True) or {}
+    access_code = data.get("access_code")
+    codes = _configured_access_codes()
+    if codes is None:
+        return jsonify({
+            "status": "error",
+            "message": "Member access codes are not configured on the server."
+        }), 503
+    if not isinstance(access_code, str) or not 24 <= len(access_code) <= 256:
+        return jsonify({"status": "error", "message": "Enter a valid member access code."}), 400
+
+    role = next(
+        (member for member, expected in codes.items() if hmac.compare_digest(access_code, expected)),
+        None,
+    )
+    if role is None:
+        return jsonify({"status": "error", "message": "Incorrect access code."}), 401
+
+    session.clear()
+    session["authorized_role"] = role
+    session.permanent = True
+    return jsonify({"status": "ok", "role": role})
+
 @app.route("/api/record_dontbid", methods=["POST"])
+@require_member
 def record_dontbid_api():
     data = request.get_json() or {}
     tender_no = (data.get("tender_no") or "").strip().upper()
-    user_name = (data.get("approved_by") or "Kamal Sir").strip()
+    user_name = _current_member()
     if tender_no:
         try:
             conn = get_db()
@@ -2828,6 +2906,7 @@ def record_dontbid_api():
     return jsonify({"status": "error"}), 400
 
 @app.route("/api/add_manufacturer", methods=["POST"])
+@require_member
 def add_mfg_api():
     data = request.get_json() or {}
     name = (data.get("name") or "").strip()
@@ -2843,9 +2922,11 @@ def add_mfg_api():
     return jsonify({"status": "error", "message": "Name required"}), 400
 
 @app.route("/api/submit_allocation", methods=["POST"])
+@require_member
 def submit_allocation():
     data = request.get_json() or {}
     tender_no = (data.get("tender_no") or "").strip().upper()
+    data["approved_by"] = _current_member()
     try:
         conn = get_db()
         cur = conn.cursor()

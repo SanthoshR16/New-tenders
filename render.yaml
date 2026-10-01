@@ -7,3 +7,9 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.9
+      - key: DEVELOPER_ACCESS_CODE
+        sync: false
+      - key: KAMAL_SIR_ACCESS_CODE
+        sync: false
+      - key: UDAY_SIR_ACCESS_CODE
+        sync: false
