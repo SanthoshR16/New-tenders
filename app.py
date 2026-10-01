@@ -2464,14 +2464,15 @@ def bid_page():
     </head>
     <body>
         <!-- AUTHORIZATION GATE -->
+        <!-- AUTHORIZATION GATE -->
         <div class="card" id="auth-gate" style="display:none; max-width:440px; margin:40px auto; padding:25px; text-align:center;">
-            <div style="font-size: 44px; margin-bottom: 10px;">🔐</div>
-            <h2 style="margin: 0 0 8px 0; font-size: 20px; color:#0f172a;">Authorized Access Only</h2>
-            <p style="color: #64748b; font-size: 14px; margin-bottom: 20px;">Enter your registered 10-digit mobile number to access tender decisions.</p>
-            <input type="tel" id="auth-phone-input" placeholder="Enter 10-digit Mobile Number" maxlength="10" style="width: 100%; padding: 12px; font-size: 16px; border: 1px solid #cbd5e1; border-radius: 8px; margin-bottom: 12px; text-align: center; font-weight: bold; letter-spacing: 1px;">
-            <div id="auth-error" style="color: #dc2626; font-size: 13px; font-weight: 600; margin-bottom: 12px; display: none;"></div>
-            <button type="button" onclick="verifyPhone()" style="width: 100%; background: #16a34a; color: white; border: none; padding: 13px; font-size: 16px; font-weight: 700; border-radius: 8px; cursor: pointer;">Verify & Enter</button>
+            <h2 style="margin: 0 0 12px 0; font-size: 20px; color:#0f172a;">Who are you?</h2>
+            <p style="color: #64748b; font-size: 14px; margin-bottom: 18px;">Tap your name to continue:</p>
+            <button type="button" onclick="pickUser('9845295400','Kamal Sir')" style="width:100%; background:#16a34a; color:white; border:none; padding:14px; font-size:16px; font-weight:700; border-radius:8px; cursor:pointer; margin-bottom:10px;">Kamal Sir</button>
+            <button type="button" onclick="pickUser('9980304157','Uday Sir')" style="width:100%; background:#2563eb; color:white; border:none; padding:14px; font-size:16px; font-weight:700; border-radius:8px; cursor:pointer; margin-bottom:10px;">Uday Sir</button>
+            <button type="button" onclick="pickUser('7760969517','Developer')" style="width:100%; background:#7c3aed; color:white; border:none; padding:14px; font-size:16px; font-weight:700; border-radius:8px; cursor:pointer;">Developer</button>
         </div>
+
 
         <div class="card" id="form-card" style="display:none;">
             <div class="hdr">
@@ -2531,11 +2532,7 @@ def bid_page():
             }};
 
             function checkAuth() {{
-                let phone = localStorage.getItem("tender_user_phone");
-                const urlParams = new URLSearchParams(window.location.search);
-                const p = urlParams.get('phone');
-                if (p) phone = p.replace(/\\D/g, '').slice(-10);
-
+                const phone = localStorage.getItem("tender_user_phone");
                 if (phone && AUTH_MEMBERS[phone]) {{
                     grantAccess(phone, AUTH_MEMBERS[phone]);
                 }} else {{
@@ -2544,18 +2541,9 @@ def bid_page():
                 }}
             }}
 
-            function verifyPhone() {{
-                const input = document.getElementById('auth-phone-input');
-                const err = document.getElementById('auth-error');
-                const phone = input.value.replace(/\\D/g, '').slice(-10);
-
-                if (AUTH_MEMBERS[phone]) {{
-                    localStorage.setItem("tender_user_phone", phone);
-                    grantAccess(phone, AUTH_MEMBERS[phone]);
-                }} else {{
-                    err.style.display = 'block';
-                    err.innerText = '❌ Access Denied: Unauthorized mobile number.';
-                }}
+            function pickUser(phone, name) {{
+                localStorage.setItem("tender_user_phone", phone);
+                grantAccess(phone, name);
             }}
 
             function grantAccess(phone, name) {{
@@ -2736,13 +2724,13 @@ def dont_bid():
     </head>
     <body>
         <div class="card" id="auth-gate" style="display:none;">
-            <div style="font-size: 40px; margin-bottom: 10px;">🔐</div>
-            <h2 style="margin: 0 0 8px 0; font-size: 20px;">Authorized Access Only</h2>
-            <p style="color: #64748b; font-size: 14px; margin-bottom: 20px;">Enter your registered 10-digit mobile number to record decision:</p>
-            <input type="tel" id="phone-input" placeholder="10-digit Mobile Number" maxlength="10" style="width: 100%; padding: 12px; font-size: 16px; border: 1px solid #cbd5e1; border-radius: 8px; margin-bottom: 12px; text-align: center; font-weight: bold; letter-spacing: 1px;">
-            <div id="auth-error" style="color: #dc2626; font-size: 13px; font-weight: 600; margin-bottom: 12px; display: none;"></div>
-            <button type="button" onclick="verifyPhone()" style="width: 100%; background: #dc2626; color: white; border: none; padding: 12px; font-size: 16px; font-weight: 700; border-radius: 8px; cursor: pointer;">Confirm Rejection</button>
+            <h2 style="margin: 0 0 12px 0; font-size: 20px;">Who are you?</h2>
+            <p style="color: #64748b; font-size: 14px; margin-bottom: 18px;">Tap your name to confirm rejection:</p>
+            <button type="button" onclick="pickUser('9845295400','Kamal Sir')" style="width:100%; background:#16a34a; color:white; border:none; padding:14px; font-size:16px; font-weight:700; border-radius:8px; cursor:pointer; margin-bottom:10px;">Kamal Sir</button>
+            <button type="button" onclick="pickUser('9980304157','Uday Sir')" style="width:100%; background:#2563eb; color:white; border:none; padding:14px; font-size:16px; font-weight:700; border-radius:8px; cursor:pointer; margin-bottom:10px;">Uday Sir</button>
+            <button type="button" onclick="pickUser('7760969517','Developer')" style="width:100%; background:#7c3aed; color:white; border:none; padding:14px; font-size:16px; font-weight:700; border-radius:8px; cursor:pointer;">Developer</button>
         </div>
+
 
         <div class="card" id="reject-card" style="display:none; background: #fff5f5; border-color: #fecaca;">
             <h1 style="color: #dc2626; margin: 0 0 10px 0; font-size: 24px;">🚫 MOVED TO NOT DONE</h1>
@@ -2762,11 +2750,7 @@ def dont_bid():
             }};
 
             function checkAuth() {{
-                let phone = localStorage.getItem("tender_user_phone");
-                const urlParams = new URLSearchParams(window.location.search);
-                const p = urlParams.get('phone');
-                if (p) phone = p.replace(/\\D/g, '').slice(-10);
-
+                const phone = localStorage.getItem("tender_user_phone");
                 if (phone && AUTH_MEMBERS[phone]) {{
                     recordRejection(AUTH_MEMBERS[phone]);
                 }} else {{
@@ -2774,19 +2758,9 @@ def dont_bid():
                 }}
             }}
 
-            function verifyPhone() {{
-                const input = document.getElementById('phone-input');
-                const err = document.getElementById('auth-error');
-                const phone = input.value.replace(/\\D/g, '').slice(-10);
-
-                if (AUTH_MEMBERS[phone]) {{
-                    localStorage.setItem("tender_user_phone", phone);
-                    document.getElementById('auth-gate').style.display = 'none';
-                    recordRejection(AUTH_MEMBERS[phone]);
-                }} else {{
-                    err.style.display = 'block';
-                    err.innerText = '❌ Access Denied: Unauthorized number.';
-                }}
+            function pickUser(phone, name) {{
+                localStorage.setItem("tender_user_phone", phone);
+                recordRejection(name);
             }}
 
             function recordRejection(userName) {{
