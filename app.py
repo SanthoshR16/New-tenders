@@ -2509,6 +2509,7 @@ def bid_page():
         f'<option value="{html_lib.escape(name, quote=True)}">{html_lib.escape(name)}</option>'
         for name in manufacturers
     )
+    bulk_manufacturer_options += '<option value="__ADD__">➕ Add Manufacturer</option>'
 
     tender = None
     if url_items:
@@ -2550,31 +2551,14 @@ def bid_page():
         it_code = it.get("code")
         code_badge = f'<span style="font-size:11px; background:#e2e8f0; color:#475569; padding:2px 6px; border-radius:4px; margin-right:6px;">{it_code}</span>' if it_code else ''
 
-        mfg_opts = '<option value="">Select ▾</option>'
-        for m in manufacturers:
-            safe_mfg = html_lib.escape(m, quote=True)
-            mfg_opts += f'<option value="{safe_mfg}">{safe_mfg}</option>'
-        mfg_opts += '<option value="__ADD__">➕ Add Manufacturer</option>'
-
         it_name_esc = html_lib.escape(str(it_name), quote=True)
 
 
         items_rows += f"""
-
-
-                <tr class="item-row" data-id="{it_id}" data-name="{it_name_esc}" data-qty="{it_qty}">
-
-
-                    <td class="td-sel" style="text-align:center;"><input type="checkbox" class="item-select" checked onchange="toggleRow(this)" style="width:18px; height:18px; accent-color:#16a34a;"></td>
-
-
+                <tr class="item-row" data-id="{it_id}" data-name="{it_name_esc}" data-qty="{it_qty}" data-manufacturer="" tabindex="0" role="button" aria-label="Assign manufacturer to {it_name_esc}" onclick="assignActiveManufacturer(this)" onkeydown="if(event.key==='Enter'||event.key===' '){{event.preventDefault();assignActiveManufacturer(this)}}">
                     <td class="td-item" style="word-break:break-word; font-size:14px; line-height:1.35;">{code_badge}<b>{it_name_esc}</b></td>
             <td class="td-qty" style="text-align:center; font-weight:bold; color:#2563eb; font-size:14px;">{it_qty}</td>
-            <td class="td-mfg">
-                <select class="mfg-select" onchange="handleMfg(this)" style="width:100%; padding:7px 4px; border-radius:6px; border:1px solid #cbd5e1; font-size:13px; background:white; font-weight:500;">
-                    {mfg_opts}
-                </select>
-            </td>
+            <td class="td-mfg"><span class="manufacturer-display" style="color:#64748b;">Tap to assign</span></td>
         </tr>
         """
 
@@ -2598,6 +2582,11 @@ def bid_page():
             table {{ width: 100%; border-collapse: collapse; }}
             th, td {{ padding: 10px 8px; border-bottom: 1px solid #f1f5f9; }}
             th {{ background: #f8fafc; color: #64748b; font-size: 13px; text-transform: uppercase; text-align: left; }}
+            .item-row {{ cursor: pointer; transition: background-color .12s ease; }}
+            .item-row:hover, .item-row:focus {{ background: #f0fdf4; outline: none; }}
+            .item-row.is-assigned {{ background: #f0fdf4; }}
+            .manufacturer-display {{ display: inline-block; padding: 5px 9px; border-radius: 999px; background: #f1f5f9; font-size: 13px; }}
+            .item-row.is-assigned .manufacturer-display {{ color: #166534 !important; background: #dcfce7; font-weight: 700; }}
             .btn-sub {{ display: block; width: calc(100% - 40px); margin: 20px auto; background: #16a34a; color: white; border: none; padding: 16px; font-size: 17px; font-weight: 700; border-radius: 8px; cursor: pointer; text-align: center; }}
             @media (max-width: 600px) {{
                 body {{ padding: 6px 4px; }}
@@ -2607,10 +2596,9 @@ def bid_page():
                 .approver-bar {{ padding: 10px 12px; font-size: 13px; }}
                 .content-pad {{ padding: 10px 6px !important; }}
                 th, td {{ padding: 8px 4px; }}
-                .th-sel, .td-sel {{ width: 34px !important; text-align: center; }}
                 .th-qty, .td-qty {{ width: 36px !important; text-align: center; }}
-                .th-mfg, .td-mfg {{ width: 100px !important; min-width: 95px !important; max-width: 105px !important; padding: 6px 2px !important; }}
-                .mfg-select {{ font-size: 12px !important; padding: 6px 2px !important; }}
+                .th-mfg, .td-mfg {{ width: 105px !important; min-width: 95px !important; max-width: 120px !important; padding: 6px 2px !important; }}
+                .manufacturer-display {{ font-size: 12px !important; padding: 4px 6px !important; }}
                 .btn-sub {{ width: calc(100% - 16px); margin: 14px auto; padding: 14px; font-size: 15px; }}
             }}
             .modal {{ display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); align-items: center; justify-content: center; z-index: 99; }}
@@ -2630,21 +2618,20 @@ def bid_page():
             </div>
             <div class="content-pad" style="padding: 15px 20px;">
                 {search_box_html}
-                <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:12px; padding:10px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px;">
-                    <label for="bulk-manufacturer" style="font-weight:600; font-size:13px;">Fill blank manufacturer for selected items:</label>
-                    <select id="bulk-manufacturer" style="flex:1; min-width:150px; padding:8px; border:1px solid #cbd5e1; border-radius:6px;">
+                <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:8px; padding:10px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px;">
+                    <label for="bulk-manufacturer" style="font-weight:600; font-size:13px;">1. Choose manufacturer, then tap its items:</label>
+                    <select id="bulk-manufacturer" onchange="handleActiveManufacturerChange(this)" style="flex:1; min-width:150px; padding:8px; border:1px solid #cbd5e1; border-radius:6px;">
                         {bulk_manufacturer_options}
                     </select>
-                    <button type="button" onclick="applyManufacturerToSelectedBlanks()" style="padding:8px 12px; border:0; border-radius:6px; background:#2563eb; color:white; font-weight:600;">Apply to selected</button>
                 </div>
-                <div style="margin-bottom: 10px; display:flex; justify-content:space-between; align-items:center;">
-                    <label style="font-weight: 700; cursor: pointer;"><input type="checkbox" id="sel-all" checked onchange="toggleAll(this)"> SELECT ALL FOR GROUP ({len(tender['items'])} Items)</label>
+                <div style="margin-bottom: 10px; display:flex; justify-content:space-between; align-items:center; color:#475569; font-size:13px;">
+                    <span>Tap an assigned item again to remove it.</span>
                     <span id="match-count" style="font-size:12px; color:#64748b;"></span>
                 </div>
                 <div style="max-height: 520px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 6px;">
                     <table>
                         <thead style="position: sticky; top: 0; z-index: 10;">
-                            <tr><th class="th-sel" style="text-align:center; width:44px;">Select</th><th class="th-item">Item</th><th class="th-qty" style="text-align:center; width:46px;">Qty</th><th class="th-mfg" style="width:115px;">Manufacturer</th></tr>
+                            <tr><th class="th-item">Item — tap to assign</th><th class="th-qty" style="text-align:center; width:46px;">Qty</th><th class="th-mfg" style="width:115px;">Manufacturer</th></tr>
                         </thead>
                         <tbody id="items-tbody">{items_rows}</tbody>
                     </table>
@@ -2678,7 +2665,11 @@ def bid_page():
             const AUTHORIZED_ROLE = {json.dumps(authorized_role)};
             document.getElementById('form-card').style.display = 'block';
 
-            let targetSelect = null;
+            function updateAssignmentCount() {{
+                const assigned = document.querySelectorAll('#items-tbody .item-row[data-manufacturer]:not([data-manufacturer=""])').length;
+                const count = document.getElementById('match-count');
+                if (count) count.textContent = assigned + ' of {len(tender["items"])} items assigned';
+            }}
             function filterItems() {{
                 const q = document.getElementById('filter-input').value.toLowerCase().trim();
                 let matched = 0;
@@ -2689,62 +2680,30 @@ def bid_page():
                     if (show) matched++;
                 }});
                 const cnt = document.getElementById('match-count');
-                if (cnt) cnt.innerText = q ? (matched + ' matching items') : '';
+                if (cnt) cnt.textContent = q ? (matched + ' matching items') : '';
             }}
-            function toggleAll(m) {{
-                document.querySelectorAll('.item-select').forEach(cb => {{
-                    if (cb.closest('tr').style.display !== 'none') {{
-                        cb.checked = m.checked;
-                        toggleRow(cb);
-                    }}
-                }});
-            }}
-            function toggleRow(cb) {{
-                const row = cb.closest('tr');
-                row.querySelector('.mfg-select').disabled = !cb.checked;
-                row.style.opacity = cb.checked ? '1' : '0.4';
-            }}
-            function handleMfg(s) {{
-                if (s.value === '__ADD__') {{
-                    targetSelect = s;
+            function handleActiveManufacturerChange(select) {{
+                if (select.value === '__ADD__') {{
                     document.getElementById('new-mfg-input').value = '';
                     document.getElementById('add-modal').style.display = 'flex';
-                    return;
-                }}
-                const chosen = s.value;
-                if (!chosen) return;
-                const row = s.closest('tr');
-                if (row) {{
-                    const cb = row.querySelector('.item-select');
-                    if (cb && !cb.checked) {{
-                        cb.checked = true;
-                        toggleRow(cb);
-                    }}
                 }}
             }}
-            function applyManufacturerToSelectedBlanks() {{
-                const manufacturer = document.getElementById('bulk-manufacturer').value;
-                if (!manufacturer) return alert('Choose a manufacturer first.');
-                const selectedRows = Array.from(document.querySelectorAll('#items-tbody .item-row'))
-                    .filter(row => row.querySelector('.item-select').checked);
-                if (selectedRows.length === 0) return alert('Select at least one item first.');
-                let appliedCount = 0;
-                selectedRows.forEach(row => {{
-                    const select = row.querySelector('.mfg-select');
-                    if (select && !select.value) {{
-                        select.value = manufacturer;
-                        appliedCount++;
-                        const checkbox = row.querySelector('.item-select');
-                        if (checkbox) {{
-                            checkbox.checked = false;
-                            toggleRow(checkbox);
-                        }}
-                    }}
-                }});
-                document.getElementById('bulk-manufacturer').value = '';
-                if (appliedCount === 0) {{
-                    alert('Selected items already have manufacturers. Change an item individually to replace one.');
+            function assignActiveManufacturer(row) {{
+                const manufacturerSelect = document.getElementById('bulk-manufacturer');
+                const manufacturer = manufacturerSelect.value;
+                if (!manufacturer || manufacturer === '__ADD__') {{
+                    alert('Choose a manufacturer first.');
+                    manufacturerSelect.focus();
+                    return;
                 }}
+                const current = row.dataset.manufacturer || '';
+                const next = current === manufacturer ? '' : manufacturer;
+                row.dataset.manufacturer = next;
+                const badge = row.querySelector('.manufacturer-display');
+                badge.textContent = next || 'Tap to assign';
+                row.classList.toggle('is-assigned', Boolean(next));
+                row.setAttribute('aria-label', (next ? 'Assigned to ' + next + ': ' : 'Assign manufacturer to ') + row.dataset.name);
+                updateAssignmentCount();
             }}
             function addMfg() {{
                 const val = document.getElementById('new-mfg-input').value.trim();
@@ -2759,17 +2718,14 @@ def bid_page():
                     return r.json();
                 }})
                 .then(d => {{
-                    document.querySelectorAll('.mfg-select').forEach(sel => {{
-                        const previous = sel.value;
-                        sel.replaceChildren(new Option('Select ▾', ''));
-                        d.manufacturers.forEach(name => sel.add(new Option(name, name)));
-                        sel.add(new Option('➕ Add Manufacturer', '__ADD__'));
-                        sel.value = previous;
-                    }});
-                    if (targetSelect) targetSelect.value = d.manufacturers.find(
+                    const select = document.getElementById('bulk-manufacturer');
+                    const current = select.value;
+                    select.replaceChildren(new Option('Choose manufacturer…', ''));
+                    d.manufacturers.forEach(name => select.add(new Option(name, name)));
+                    select.add(new Option('➕ Add Manufacturer', '__ADD__'));
+                    select.value = d.manufacturers.find(
                         name => name.toLowerCase() === val.toLowerCase()
-                    ) || '';
-                    targetSelect = null;
+                    ) || current;
                     document.getElementById('add-modal').style.display = 'none';
                 }})
                 .catch(error => alert('Could not add manufacturer: ' + error.message));
@@ -2779,14 +2735,9 @@ def bid_page():
                 const rows = Array.from(document.querySelectorAll('.item-row'));
                 
                 const allocs = [];
-                const itemsWithoutManufacturer = [];
                 rows.forEach(r => {{
-                    const cb = r.querySelector('.item-select');
-                    const mfg = r.querySelector('.mfg-select') ? r.querySelector('.mfg-select').value : '';
-                    const selectedForGroup = !cb || cb.checked;
-                    if (selectedForGroup && (!mfg || mfg === '__ADD__')) {{
-                        itemsWithoutManufacturer.push(r.getAttribute('data-name') || 'Item');
-                    }} else if (mfg && mfg !== '__ADD__') {{
+                    const mfg = r.dataset.manufacturer || '';
+                    if (mfg) {{
                         allocs.push({{
                             item_id: r.getAttribute('data-id') || '1',
                             item_name: r.getAttribute('data-name') || 'Item',
@@ -2797,11 +2748,7 @@ def bid_page():
                 }});
 
                 if (allocs.length === 0) {{
-                    return alert('Please select at least one item.');
-                }}
-                if (itemsWithoutManufacturer.length > 0) {{
-                    return alert('Choose a manufacturer for every selected item before submitting. Missing: ' +
-                        itemsWithoutManufacturer.slice(0, 5).join(', '));
+                    return alert('Assign a manufacturer to at least one item before submitting.');
                 }}
 
                 const subBtn = document.getElementById('sub-btn');
@@ -2843,6 +2790,7 @@ def bid_page():
                     subBtn.innerText = 'SUBMIT MANUFACTURER ALLOCATION';
                 }});
             }}
+            updateAssignmentCount();
         </script>
     </body>
     </html>
