@@ -9,11 +9,14 @@ import urllib.parse
 import hashlib
 import hmac
 import secrets
+import logging
 from functools import wraps
 from datetime import datetime
 from flask import Flask, request, jsonify, render_template_string, session
+import decision_relay
 
 app = Flask(__name__)
+logger = logging.getLogger("tender_decision_app")
 
 DB_PATH = os.environ.get("DB_PATH", "cloud_tenders.db")
 AUTHORIZED_ROLES = ("Developer", "Kamal Sir", "Uday Sir")
@@ -115,6 +118,41 @@ def _configure_session_secret():
 def _current_member():
     role = session.get("authorized_role")
     return role if role in AUTHORIZED_ROLES else None
+
+
+def _get_decision_tender_title(tender_no, data):
+    title = str(data.get("tender_title") or data.get("tender_name") or "").strip()
+    if title:
+        return title
+    conn = get_db()
+    try:
+        row = conn.execute(
+            "SELECT tender_name FROM tenders_catalog WHERE tender_no = ?",
+            (tender_no,),
+        ).fetchone()
+        if row and row["tender_name"]:
+            return str(row["tender_name"]).strip()
+    finally:
+        conn.close()
+    return tender_no
+
+
+def _relay_saved_decision(decision_id):
+    try:
+        decision_relay.relay_pending_decisions()
+    except Exception:
+        logger.exception(
+            "Immediate WhatsApp relay failed for decision ID %s; it remains eligible for retry.",
+            decision_id,
+        )
+    try:
+        return decision_relay.get_decision_sent(decision_id)
+    except Exception:
+        logger.exception(
+            "Could not verify WhatsApp delivery status for decision ID %s.",
+            decision_id,
+        )
+        return False
 
 
 def require_member(view):
@@ -2860,7 +2898,6 @@ def bid_page():
                 const subBtn = document.getElementById('sub-btn');
                 subBtn.disabled = true;
                 subBtn.innerText = 'SAVING ALLOCATION...';
-                const sendingWindow = window.open('about:blank', '_blank');
                 fetch('/api/submit_allocation', {{
                     method: 'POST',
                     headers: {{'Content-Type': 'application/json'}},
@@ -2877,17 +2914,14 @@ def bid_page():
                 }})
                 .then(d => {{
                     if (d.status !== 'ok') throw new Error(d.message || 'Error saving');
-                    const sendingUrl = '/decision-sending/' + d.action_id;
-                    if (sendingWindow) {{
-                        sendingWindow.location.href = sendingUrl;
-                        document.getElementById('form-card').innerHTML =
-                            '<h2>Decision recorded</h2><p>Continue in the sending page that opened.</p>';
-                    }} else {{
-                        window.location.assign(sendingUrl);
-                    }}
+                    const sent = d.whatsapp_sent === true;
+                    document.getElementById('form-card').innerHTML =
+                        '<h2>Decision recorded</h2><p id="decision-relay-status" role="status"></p>';
+                    document.getElementById('decision-relay-status').textContent = sent
+                        ? 'WhatsApp notification sent to the tender group.'
+                        : 'Decision saved. WhatsApp delivery is queued for automatic retry.';
                 }})
                 .catch(err => {{
-                    if (sendingWindow) sendingWindow.close();
                     alert('Submission failed: ' + err.message);
                     subBtn.disabled = false;
                     subBtn.innerText = 'SUBMIT MANUFACTURER ALLOCATION';
@@ -2929,22 +2963,21 @@ def dont_bid():
             const savedDecision = sessionStorage.getItem(decisionStorageKey);
             if (savedDecision) {{
                 try {{
-                    const actionId = JSON.parse(savedDecision).action_id;
-                    if (actionId) {{
-                        window.location.replace('/decision-sending/' + actionId);
-                    }}
+                    const saved = JSON.parse(savedDecision);
+                    document.getElementById('submit-decision').disabled = true;
+                    document.getElementById('submit-decision').textContent = 'DECISION RECORDED';
+                    decisionStatus.textContent = saved.whatsapp_sent
+                        ? 'WhatsApp notification sent to the tender group.'
+                        : 'Decision saved. WhatsApp delivery is queued for automatic retry.';
                 }} catch (error) {{
                     sessionStorage.removeItem(decisionStorageKey);
                 }}
             }}
             async function submitNotBid() {{
                 if (sessionStorage.getItem(decisionStorageKey)) {{
-                    const actionId = JSON.parse(sessionStorage.getItem(decisionStorageKey)).action_id;
-                    window.location.replace('/decision-sending/' + actionId);
                     return;
                 }}
                 const button = document.getElementById('submit-decision');
-                const sendingWindow = window.open('about:blank', '_blank');
                 button.disabled = true;
                 button.textContent = 'SAVING DECISION...';
                 fetch('/api/record_dontbid', {{
@@ -2957,25 +2990,19 @@ def dont_bid():
                     if (!response.ok || result.status !== 'ok') {{
                         throw new Error(result.message || 'Decision could not be saved.');
                     }}
-                    sessionStorage.setItem(decisionStorageKey, JSON.stringify({{action_id: result.action_id}}));
-                    const sendingUrl = '/decision-sending/' + result.action_id;
-                    if (sendingWindow) {{
-                        sendingWindow.location.href = sendingUrl;
-                        document.querySelector('main').innerHTML =
-                            '<h1>Decision recorded</h1><p>Continue in the sending page that opened.</p>';
-                    }} else {{
-                        window.location.replace(sendingUrl);
-                    }}
+                    sessionStorage.setItem(decisionStorageKey, JSON.stringify({{whatsapp_sent: result.whatsapp_sent === true}}));
+                    button.textContent = 'DECISION RECORDED';
+                    decisionStatus.textContent = result.whatsapp_sent
+                        ? 'WhatsApp notification sent to the tender group.'
+                        : 'Decision saved. WhatsApp delivery is queued for automatic retry.';
                 }})
                 .catch(error => {{
-                    if (sendingWindow) sendingWindow.close();
                     decisionStatus.textContent = 'Decision was not saved: ' + error.message;
                     decisionStatus.style.color = '#b91c1c';
                     button.disabled = false;
                     button.textContent = 'Submit NOT BID';
                 }});
             }}
-            if (savedDecision) document.getElementById('submit-decision').disabled = true;
         </script>
     </body>
     </html>
@@ -3146,10 +3173,16 @@ def record_dontbid_api():
                 "tender_no": tender_no,
                 "action": "NOT_BID",
                 "approved_by": user_name,
-                "requires_whatsapp_share": True,
+                "requires_whatsapp_share": False,
                 "whatsapp_shared": False,
             }
             whatsapp_text = _whatsapp_decision_message("NOT_BID", decision_data)
+            decision_id = decision_relay.store_decision(
+                tender_id=tender_no,
+                tender_title=_get_decision_tender_title(tender_no, data),
+                decision="NO BID",
+                decided_by=user_name,
+            )
             conn = get_db()
             try:
                 cur = conn.cursor()
@@ -3161,16 +3194,29 @@ def record_dontbid_api():
                 conn.commit()
             except Exception:
                 conn.rollback()
+                try:
+                    decision_relay.delete_unsent_decision(decision_id)
+                except Exception:
+                    logger.exception(
+                        "Could not remove unrelayed decision ID %s after local sync storage failed.",
+                        decision_id,
+                    )
                 raise
             finally:
                 conn.close()
+            whatsapp_sent = _relay_saved_decision(decision_id)
             return jsonify({
                 "status": "ok",
                 "action_id": action_id,
                 "whatsapp_text": whatsapp_text,
+                "whatsapp_sent": whatsapp_sent,
             })
-        except Exception as e:
-            return jsonify({"status": "error", "message": str(e)}), 500
+        except Exception:
+            logger.exception("Could not record NOT BID decision for tender %s.", tender_no)
+            return jsonify({
+                "status": "error",
+                "message": "Decision could not be saved. Please retry.",
+            }), 500
     return jsonify({"status": "error"}), 400
 
 @app.route("/api/add_manufacturer", methods=["POST"])
@@ -3195,10 +3241,16 @@ def submit_allocation():
     data = request.get_json() or {}
     tender_no = (data.get("tender_no") or "").strip().upper()
     data["approved_by"] = _current_member()
-    data["requires_whatsapp_share"] = True
+    data["requires_whatsapp_share"] = False
     data["whatsapp_shared"] = False
     try:
         whatsapp_text = _whatsapp_decision_message("BID_ALLOCATION", data)
+        decision_id = decision_relay.store_decision(
+            tender_id=tender_no,
+            tender_title=_get_decision_tender_title(tender_no, data),
+            decision="BID",
+            decided_by=data["approved_by"],
+        )
         conn = get_db()
         try:
             cur = conn.cursor()
@@ -3210,17 +3262,30 @@ def submit_allocation():
             conn.commit()
         except Exception:
             conn.rollback()
+            try:
+                decision_relay.delete_unsent_decision(decision_id)
+            except Exception:
+                logger.exception(
+                    "Could not remove unrelayed decision ID %s after local sync storage failed.",
+                    decision_id,
+                )
             raise
         finally:
             conn.close()
+        whatsapp_sent = _relay_saved_decision(decision_id)
         return jsonify({
             "status": "ok",
             "message": "Saved to cloud pending sync",
             "action_id": action_id,
             "whatsapp_text": whatsapp_text,
+            "whatsapp_sent": whatsapp_sent,
         })
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
+    except Exception:
+        logger.exception("Could not record BID decision for tender %s.", tender_no)
+        return jsonify({
+            "status": "error",
+            "message": "Decision could not be saved. Please retry.",
+        }), 500
 
 @app.route("/api/pending_actions")
 def get_pending():
@@ -3264,6 +3329,93 @@ def _relay_auth_error(status_code):
             "message": "Relay API authentication is not configured.",
         }), status_code
     return jsonify({"status": "error", "message": "Unauthorized."}), status_code
+
+
+@app.route("/relay-decisions", methods=["POST"])
+def relay_decisions():
+    authorized, status_code = _relay_token_is_valid()
+    if not authorized:
+        return _relay_auth_error(status_code)
+    try:
+        result = decision_relay.relay_pending_decisions()
+        result["status"] = "ok"
+        return jsonify(result)
+    except Exception:
+        logger.exception("Manual tender decision relay failed.")
+        return jsonify({
+            "status": "error",
+            "message": "Decision relay is temporarily unavailable.",
+        }), 503
+
+
+@app.route("/test-whatsapp", methods=["POST"])
+def test_whatsapp():
+    authorized, status_code = _relay_token_is_valid()
+    if not authorized:
+        return _relay_auth_error(status_code)
+    sent = decision_relay.send_whatsapp_text("Test message from tenderrelay")
+    return jsonify({"status": "ok" if sent else "error", "sent": sent}), (
+        200 if sent else 502
+    )
+
+
+@app.route("/api/relay/scan-start", methods=["POST"])
+def prepare_tender_scan():
+    authorized, status_code = _relay_token_is_valid()
+    if not authorized:
+        return _relay_auth_error(status_code)
+    try:
+        relay_result = decision_relay.relay_pending_decisions()
+        rows_cleared = decision_relay.clear_sent_decisions()
+        redis_keys_cleared = decision_relay.clear_tender_redis_keys()
+        unsent_retained = decision_relay.count_unsent_decisions()
+        logger.info(
+            "Tender scan preparation complete: relayed=%d, send_failures=%d, "
+            "decision_rows_cleared=%d, redis_keys_cleared=%d, unsent_retained=%d.",
+            relay_result["sent"],
+            relay_result["failed"],
+            rows_cleared,
+            redis_keys_cleared,
+            unsent_retained,
+        )
+        return jsonify({
+            "status": "ok",
+            "relay": relay_result,
+            "rows_cleared": rows_cleared,
+            "redis_keys_cleared": redis_keys_cleared,
+            "unsent_retained": unsent_retained,
+        })
+    except Exception:
+        logger.exception("Tender scan preparation failed.")
+        return jsonify({
+            "status": "error",
+            "message": "Tender scan preparation is incomplete.",
+        }), 503
+
+
+@app.route("/api/relay/scan-summary", methods=["POST"])
+def relay_tender_scan_summary():
+    authorized, status_code = _relay_token_is_valid()
+    if not authorized:
+        return _relay_auth_error(status_code)
+    data = request.get_json(silent=True)
+    new_tender_count = data.get("new_tenders") if isinstance(data, dict) else None
+    if (
+        isinstance(new_tender_count, bool)
+        or not isinstance(new_tender_count, int)
+        or new_tender_count < 0
+    ):
+        return jsonify({
+            "status": "error",
+            "message": "new_tenders must be a non-negative integer.",
+        }), 400
+    message = decision_relay.tender_decision_summary(new_tender_count)
+    if not decision_relay.send_whatsapp_text(message):
+        return jsonify({
+            "status": "error",
+            "message": "Tender scan summary could not be sent.",
+        }), 502
+    return jsonify({"status": "ok", "sent": True})
 
 
 @app.route("/api/relay/pending", methods=["GET"])

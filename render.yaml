@@ -15,3 +15,15 @@ services:
         sync: false
       - key: RELAY_API_TOKEN
         sync: false
+      - key: EVO_BASE_URL
+        sync: false
+      - key: EVO_API_KEY
+        sync: false
+      - key: EVO_INSTANCE
+        sync: false
+      - key: WHATSAPP_GROUP_JID
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false

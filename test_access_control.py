@@ -2,6 +2,7 @@ import json
 import os
 import tempfile
 import unittest
+from unittest.mock import patch
 
 import app as tender_app
 
@@ -46,7 +47,18 @@ class MemberAccessControlTests(unittest.TestCase):
         conn.execute("DELETE FROM pending_sync")
         conn.commit()
         conn.close()
+        self.relay_patches = [
+            patch.object(tender_app.decision_relay, "store_decision", return_value=1),
+            patch.object(tender_app.decision_relay, "relay_pending_decisions", return_value={"sent": 1, "failed": 0}),
+            patch.object(tender_app.decision_relay, "get_decision_sent", return_value=True),
+        ]
+        for relay_patch in self.relay_patches:
+            relay_patch.start()
         self.client = tender_app.app.test_client()
+
+    def tearDown(self):
+        for relay_patch in self.relay_patches:
+            relay_patch.stop()
 
     def login(self, client, role):
         return client.post(

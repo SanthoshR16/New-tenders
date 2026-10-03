@@ -49,12 +49,22 @@ class WhatsAppDecisionSharingTests(unittest.TestCase):
         with closing(tender_app.get_db()) as conn:
             conn.execute("DELETE FROM pending_sync")
             conn.commit()
+        self.relay_patches = [
+            patch.object(tender_app.decision_relay, "store_decision", return_value=1),
+            patch.object(tender_app.decision_relay, "relay_pending_decisions", return_value={"sent": 1, "failed": 0}),
+            patch.object(tender_app.decision_relay, "get_decision_sent", return_value=True),
+        ]
+        self.relay_mocks = [relay_patch.start() for relay_patch in self.relay_patches]
         self.client = tender_app.app.test_client()
         login = self.client.post(
             "/api/auth/login",
             json={"access_code": self.codes["Developer"]},
         )
         self.assertEqual(login.status_code, 200)
+
+    def tearDown(self):
+        for relay_patch in self.relay_patches:
+            relay_patch.stop()
 
     def _submit_approval(self):
         response = self.client.post(
@@ -86,13 +96,28 @@ class WhatsAppDecisionSharingTests(unittest.TestCase):
         return {"Authorization": f"Bearer {token}"}
 
     def test_relay_pending_includes_synced_undelivered_decisions(self):
-        result = self._submit_approval()
-        action_id = result["action_id"]
-        synced = tender_app.app.test_client().post(
-            "/api/mark_synced",
-            json={"id": action_id},
-        )
-        self.assertEqual(synced.status_code, 200)
+        with closing(tender_app.get_db()) as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO pending_sync (action_type, tender_no, data_json, synced)
+                VALUES ('BID_ALLOCATION', ?, ?, 1)
+                """,
+                ("IND2712", json.dumps({
+                    "tender_no": "IND2712",
+                    "tender_name": "Tender IND2712",
+                    "approved_by": "Developer",
+                    "allocations": [{
+                        "item_id": "1",
+                        "item_name": "Equipment Scope",
+                        "quantity": "1",
+                        "manufacturer": "GMPL",
+                    }],
+                    "requires_whatsapp_share": True,
+                    "whatsapp_shared": False,
+                })),
+            )
+            action_id = cursor.lastrowid
+            conn.commit()
         self.assertEqual(self._pending_row(action_id)["synced"], 1)
 
         with patch.dict(os.environ, {"RELAY_API_TOKEN": self.RELAY_TOKEN}):
@@ -245,16 +270,22 @@ class WhatsAppDecisionSharingTests(unittest.TestCase):
         self.assertIn("*Equipment Scope* (Qty: 1) ➔ *GMPL*", result["whatsapp_text"])
         row = self._pending_row(result["action_id"])
         payload = json.loads(row["data_json"])
-        self.assertTrue(payload["requires_whatsapp_share"])
+        self.assertFalse(payload["requires_whatsapp_share"])
         self.assertFalse(payload["whatsapp_shared"])
         self.assertEqual(row["synced"], 0)
+        self.assertTrue(result["whatsapp_sent"])
+        self.relay_mocks[0].assert_called_once_with(
+            tender_id="IND2712",
+            tender_title="Tender IND2712",
+            decision="BID",
+            decided_by="Developer",
+        )
+        self.relay_mocks[1].assert_called_once()
 
         page = self.client.get("/bid?tender=IND2712")
         self.assertNotIn(b"api.whatsapp.com/send", page.data)
         self.assertNotIn(b"Open WhatsApp", page.data)
-        self.assertIn(b"const sendingWindow = window.open('about:blank', '_blank')", page.data)
-        self.assertIn(b"sendingWindow.location.href = sendingUrl", page.data)
-        self.assertIn(b"window.location.assign(sendingUrl)", page.data)
+        self.assertIn(b"WhatsApp delivery is queued for automatic retry.", page.data)
 
     def test_rejection_returns_prefilled_whatsapp_confirmation(self):
         response = self.client.post(
@@ -266,13 +297,18 @@ class WhatsAppDecisionSharingTests(unittest.TestCase):
         self.assertIn("🚫 *TENDER DECISION — NOT BID*", result["whatsapp_text"])
         self.assertIn("IND2495/CALL-3", result["whatsapp_text"])
         self.assertIn("Developer", result["whatsapp_text"])
+        self.assertTrue(result["whatsapp_sent"])
+        self.relay_mocks[0].assert_called_once_with(
+            tender_id="IND2495/CALL-3",
+            tender_title="IND2495/CALL-3",
+            decision="NO BID",
+            decided_by="Developer",
+        )
         page = self.client.get("/dontbid?tender=IND2495/CALL-3")
         self.assertNotIn(b"api.whatsapp.com/send", page.data)
         self.assertNotIn(b"Open WhatsApp", page.data)
-        self.assertIn(b"const sendingWindow = window.open('about:blank', '_blank')", page.data)
-        self.assertIn(b"sendingWindow.location.href = sendingUrl", page.data)
-        self.assertIn(b"window.location.replace(sendingUrl)", page.data)
-        self.assertIn(b"window.location.replace('/decision-sending/' + actionId)", page.data)
+        self.assertIn(b"DECISION RECORDED", page.data)
+        self.assertNotIn(b"window.location.replace('/decision-sending/' + actionId)", page.data)
 
     def test_sending_page_prepares_manual_whatsapp_and_closes_after_confirmation(self):
         result = self._submit_approval()
@@ -292,17 +328,9 @@ class WhatsAppDecisionSharingTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"Member access code", response.data)
 
-    def test_action_is_deleted_after_share_and_local_sync_in_either_order(self):
+    def test_automated_decision_needs_only_local_sync_and_legacy_share_still_works(self):
         result = self._submit_approval()
         action_id = result["action_id"]
-
-        shared = self.client.post(
-            "/api/mark_whatsapp_shared",
-            json={"id": action_id},
-        )
-        self.assertEqual(shared.status_code, 200)
-        self.assertIn("after the local scanner syncs", shared.get_json()["message"])
-        self.assertIsNotNone(self._pending_row(action_id))
 
         synced = tender_app.app.test_client().post(
             "/api/mark_synced",
@@ -311,21 +339,35 @@ class WhatsAppDecisionSharingTests(unittest.TestCase):
         self.assertEqual(synced.status_code, 200)
         self.assertIsNone(self._pending_row(action_id))
 
-        second = self._submit_approval()
-        second_id = second["action_id"]
+        with closing(tender_app.get_db()) as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO pending_sync (action_type, tender_no, data_json, synced)
+                VALUES ('NOT_BID', ?, ?, 0)
+                """,
+                ("IND-LEGACY-SHARE", json.dumps({
+                    "tender_no": "IND-LEGACY-SHARE",
+                    "approved_by": "Developer",
+                    "requires_whatsapp_share": True,
+                    "whatsapp_shared": False,
+                })),
+            )
+            legacy_id = cursor.lastrowid
+            conn.commit()
+
         synced_first = tender_app.app.test_client().post(
             "/api/mark_synced",
-            json={"id": second_id},
+            json={"id": legacy_id},
         )
         self.assertIn("waiting for WhatsApp send", synced_first.get_json()["message"])
-        self.assertEqual(self._pending_row(second_id)["synced"], 1)
+        self.assertEqual(self._pending_row(legacy_id)["synced"], 1)
 
         shared_last = self.client.post(
             "/api/mark_whatsapp_shared",
-            json={"id": second_id},
+            json={"id": legacy_id},
         )
         self.assertEqual(shared_last.status_code, 200)
-        self.assertIsNone(self._pending_row(second_id))
+        self.assertIsNone(self._pending_row(legacy_id))
 
     def test_share_confirmation_requires_member_session(self):
         result = self._submit_approval()
