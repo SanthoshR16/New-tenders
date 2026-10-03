@@ -2602,14 +2602,14 @@ def bid_page():
         items_rows += f"""
                 <tr class="item-row" data-id="{it_id}" data-name="{it_name_esc}" data-qty="{it_qty}" data-manufacturer="" tabindex="0" role="button" aria-label="Assign manufacturer to {it_name_esc}" onclick="assignActiveManufacturer(this)" onkeydown="if(event.key==='Enter'||event.key===' '){{event.preventDefault();assignActiveManufacturer(this)}}">
                     <td class="td-item" style="word-break:break-word; font-size:14px; line-height:1.35;">{code_badge}<b>{it_name_esc}</b></td>
-            <td class="td-qty" style="text-align:center; font-weight:bold; color:#2563eb; font-size:14px;">{it_qty}</td>
+            <td class="td-qty"><span class="qty-badge">{it_qty}</span></td>
             <td class="td-mfg"><span class="manufacturer-display" style="color:#64748b;">Tap to assign</span></td>
         </tr>
         """
 
     search_box_html = ""
     if len(tender["items"]) > 5:
-        search_box_html = '<input type="text" id="filter-input" onkeyup="filterItems()" placeholder="🔍 Search items by name or code..." style="width:100%; padding:9px 12px; margin-bottom:12px; border:1px solid #cbd5e1; border-radius:6px; font-size:14px;">'
+        search_box_html = '<input type="text" id="filter-input" class="filter-input" onkeyup="filterItems()" placeholder="🔍 Search items by name or code...">'
 
     html = f"""<!DOCTYPE html>
     <html lang="en">
@@ -2617,55 +2617,73 @@ def bid_page():
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>BID APPROVED — {tender['tender_no']}</title>
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
         <style>
-            * {{ box-sizing: border-box; }}
-            body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f8fafc; margin: 0; padding: 15px; color: #0f172a; }}
-            .card {{ max-width: 820px; margin: 0 auto; background: white; border-radius: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.06); overflow: hidden; border: 1px solid #e2e8f0; }}
-            .hdr {{ background: linear-gradient(135deg, #15803d, #166534); color: white; padding: 20px; }}
-            .badge {{ display: inline-block; background: #22c55e; color: white; padding: 3px 8px; border-radius: 12px; font-size: 12px; font-weight: 700; margin-bottom: 6px; }}
-            .approver-bar {{ background: #f1f5f9; padding: 14px 20px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #e2e8f0; }}
-            table {{ width: 100%; border-collapse: collapse; }}
-            th, td {{ padding: 10px 8px; border-bottom: 1px solid #f1f5f9; }}
-            th {{ background: #f8fafc; color: #64748b; font-size: 13px; text-transform: uppercase; text-align: left; }}
-            .item-row {{ cursor: pointer; transition: background-color .12s ease; }}
-            .item-row:hover, .item-row:focus {{ background: #f0fdf4; outline: none; }}
-            .item-row.is-assigned {{ background: #f0fdf4; }}
-            .manufacturer-display {{ display: inline-block; padding: 5px 9px; border-radius: 999px; background: #f1f5f9; font-size: 13px; }}
-            .item-row.is-assigned .manufacturer-display {{ color: #166534 !important; background: #dcfce7; font-weight: 700; }}
-            .btn-sub {{ display: block; width: calc(100% - 40px); margin: 20px auto; background: #16a34a; color: white; border: none; padding: 16px; font-size: 17px; font-weight: 700; border-radius: 8px; cursor: pointer; text-align: center; }}
+            * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+            body {{ font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f8fafc; padding: 24px 16px; color: #0f172a; line-height: 1.5; -webkit-font-smoothing: antialiased; }}
+            .card {{ max-width: 840px; margin: 0 auto; background: #ffffff; border-radius: 16px; box-shadow: 0 10px 30px -5px rgba(15, 23, 42, 0.08), 0 4px 6px -2px rgba(15, 23, 42, 0.03); overflow: hidden; border: 1px solid #e2e8f0; transition: box-shadow 0.2s ease; }}
+            .hdr {{ background: linear-gradient(135deg, #15803d 0%, #166534 100%); color: #ffffff; padding: 24px 28px; position: relative; box-shadow: inset 0 1px 0 rgba(255,255,255,0.15); }}
+            .badge {{ display: inline-flex; align-items: center; gap: 6px; background: rgba(255,255,255,0.22); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); color: #ffffff; padding: 4px 12px; border-radius: 9999px; font-size: 11px; font-weight: 700; letter-spacing: 0.5px; border: 1px solid rgba(255,255,255,0.3); margin-bottom: 8px; text-transform: uppercase; }}
+            .hdr h2 {{ font-size: 20px; font-weight: 700; line-height: 1.35; margin: 0 0 6px 0; color: #ffffff; letter-spacing: -0.01em; }}
+            .hdr-meta {{ font-size: 13.5px; color: rgba(255, 255, 255, 0.9); font-weight: 500; display: flex; flex-wrap: wrap; gap: 12px; }}
+            .approver-bar {{ background: #f8fafc; padding: 12px 28px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #e2e8f0; font-size: 13.5px; }}
+            .approver-pill {{ display: inline-flex; align-items: center; gap: 6px; background: #f0fdf4; border: 1px solid #bbf7d0; padding: 4px 10px; border-radius: 9999px; color: #15803d; font-weight: 600; font-size: 13px; }}
+            .content-pad {{ padding: 20px 28px; }}
+            .mfg-panel {{ display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; padding: 12px 16px; background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.02); }}
+            .mfg-select {{ flex: 1; min-width: 170px; padding: 9px 12px; border: 1.5px solid #cbd5e1; border-radius: 8px; font-size: 13.5px; font-weight: 500; background: #ffffff; color: #0f172a; outline: none; transition: all 0.15s ease; cursor: pointer; }}
+            .mfg-select:focus {{ border-color: #22c55e; box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.15); }}
+            .filter-input {{ width: 100%; padding: 10px 14px; margin-bottom: 12px; border: 1.5px solid #cbd5e1; border-radius: 8px; font-size: 13.5px; outline: none; transition: all 0.15s ease; }}
+            .filter-input:focus {{ border-color: #22c55e; box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.15); }}
+            .table-wrap {{ max-height: 520px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.02); }}
+            table {{ width: 100%; border-collapse: separate; border-spacing: 0; }}
+            th {{ position: sticky; top: 0; z-index: 10; background: #f8fafc; color: #475569; font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; padding: 11px 14px; border-bottom: 1px solid #e2e8f0; text-align: left; }}
+            td {{ padding: 12px 14px; border-bottom: 1px solid #f1f5f9; font-size: 13.5px; vertical-align: middle; }}
+            .item-row {{ cursor: pointer; transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1); outline: none; }}
+            .item-row:hover {{ background-color: #f8fafc; }}
+            .item-row:focus-visible {{ outline: 2px solid #22c55e; outline-offset: -2px; }}
+            .item-row.is-assigned {{ background-color: #f0fdf4; }}
+            .td-qty {{ text-align: center; }}
+            .qty-badge {{ display: inline-block; padding: 3px 8px; background: #eff6ff; color: #2563eb; font-weight: 700; border-radius: 9999px; font-size: 13px; min-width: 28px; text-align: center; }}
+            .manufacturer-display {{ display: inline-flex; align-items: center; justify-content: center; padding: 5px 12px; border-radius: 9999px; background: #f1f5f9; font-size: 12.5px; font-weight: 500; color: #64748b; border: 1px solid #e2e8f0; transition: all 0.15s ease; white-space: nowrap; }}
+            .item-row.is-assigned .manufacturer-display {{ color: #15803d !important; background: #dcfce7; font-weight: 700; border-color: #bbf7d0; box-shadow: 0 1px 2px rgba(22, 101, 52, 0.05); }}
+            .btn-sub {{ display: block; width: 100%; margin: 18px 0 0 0; background: linear-gradient(135deg, #16a34a 0%, #15803d 100%); color: #ffffff; border: none; padding: 15px 24px; font-size: 15.5px; font-weight: 700; border-radius: 10px; cursor: pointer; text-align: center; box-shadow: 0 4px 12px rgba(22, 163, 74, 0.22); transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1); letter-spacing: 0.01em; }}
+            .btn-sub:hover {{ transform: translateY(-1px); box-shadow: 0 6px 18px rgba(22, 163, 74, 0.32); }}
+            .btn-sub:active {{ transform: translateY(0); }}
+            .modal {{ display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(15, 23, 42, 0.5); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); align-items: center; justify-content: center; z-index: 99; }}
+            .modal-content {{ background: #ffffff; padding: 24px; border-radius: 16px; width: 90%; max-width: 390px; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04); }}
             @media (max-width: 600px) {{
-                body {{ padding: 6px 4px; }}
-                .card {{ border-radius: 8px; }}
-                .hdr {{ padding: 14px 12px; }}
+                body {{ padding: 10px 8px; }}
+                .card {{ border-radius: 12px; }}
+                .hdr {{ padding: 16px 16px; }}
                 .hdr h2 {{ font-size: 17px !important; }}
-                .approver-bar {{ padding: 10px 12px; font-size: 13px; }}
-                .content-pad {{ padding: 10px 6px !important; }}
-                th, td {{ padding: 8px 4px; }}
-                .th-qty, .td-qty {{ width: 36px !important; text-align: center; }}
-                .th-mfg, .td-mfg {{ width: 105px !important; min-width: 95px !important; max-width: 120px !important; padding: 6px 2px !important; }}
-                .manufacturer-display {{ font-size: 12px !important; padding: 4px 6px !important; }}
-                .btn-sub {{ width: calc(100% - 16px); margin: 14px auto; padding: 14px; font-size: 15px; }}
+                .approver-bar {{ padding: 10px 16px; font-size: 13px; }}
+                .content-pad {{ padding: 14px 12px !important; }}
+                th, td {{ padding: 9px 8px; }}
+                .th-qty, .td-qty {{ width: 40px !important; }}
+                .th-mfg, .td-mfg {{ width: 110px !important; min-width: 100px !important; }}
+                .manufacturer-display {{ font-size: 12px !important; padding: 4px 8px !important; }}
+                .btn-sub {{ padding: 13px; font-size: 14.5px; }}
             }}
-            .modal {{ display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); align-items: center; justify-content: center; z-index: 99; }}
-            .modal-content {{ background: white; padding: 20px; border-radius: 10px; width: 90%; max-width: 380px; }}
         </style>
     </head>
     <body>
         <div class="card" id="form-card" style="display:none;">
             <div class="hdr">
-                <span class="badge">🟢 BID APPROVED</span>
-                <h2 style="margin: 0 0 6px 0;">{tender['tender_name']}</h2>
-                <div style="font-size: 14px; opacity: 0.9;">Tender: {tender['tender_no']} | Dept: {tender['department']}</div>
+                <span class="badge">🟢 Bid Approved</span>
+                <h2>{tender['tender_name']}</h2>
+                <div class="hdr-meta"><span><b>Tender:</b> {tender['tender_no']}</span><span><b>Dept:</b> {tender['department']}</span></div>
             </div>
             <div class="approver-bar">
-                <div style="font-size: 14px;"><b>👤 Approver:</b> <span id="approver-display" style="font-weight:700; color:#15803d; margin-left:6px;">{authorized_role}</span></div>
+                <div style="display:flex; align-items:center; gap:8px;"><b>👤 Approver:</b> <span class="approver-pill" id="approver-display">{authorized_role}</span></div>
                 <input type="hidden" id="approver-select" value="{authorized_role}">
             </div>
-            <div class="content-pad" style="padding: 15px 20px;">
+            <div class="content-pad">
                 {search_box_html}
-                <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:8px; padding:10px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px;">
-                    <label for="bulk-manufacturer" style="font-weight:600; font-size:13px;">1. Choose manufacturer, then tap its items:</label>
-                    <select id="bulk-manufacturer" onchange="handleActiveManufacturerChange(this)" style="flex:1; min-width:150px; padding:8px; border:1px solid #cbd5e1; border-radius:6px;">
+                <div class="mfg-panel">
+                    <label for="bulk-manufacturer" style="font-weight:600; font-size:13px; color:#334155;">1. Choose manufacturer, then tap its items:</label>
+                    <select id="bulk-manufacturer" class="mfg-select" onchange="handleActiveManufacturerChange(this)">
                         {bulk_manufacturer_options}
                     </select>
                 </div>
@@ -2673,7 +2691,7 @@ def bid_page():
                     <span>Tap an assigned item again to remove it.</span>
                     <span id="match-count" style="font-size:12px; color:#64748b;"></span>
                 </div>
-                <div style="max-height: 520px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 6px;">
+                <div class="table-wrap">
                     <table>
                         <thead style="position: sticky; top: 0; z-index: 10;">
                             <tr><th class="th-item">Item — tap to assign</th><th class="th-qty" style="text-align:center; width:46px;">Qty</th><th class="th-mfg" style="width:115px;">Manufacturer</th></tr>
