@@ -2748,18 +2748,6 @@ def bid_page():
             <button type="button" class="btn-sub" id="sub-btn" onclick="submitAllocation()">SUBMIT MANUFACTURER ALLOCATION</button>
         </div>
 
-        <div class="card" id="success-card" style="display:none; text-align:center; padding: 40px 24px;">
-            <div style="font-size: 52px; margin-bottom: 12px;">✅</div>
-            <h2 style="color: #15803d; margin: 0 0 8px 0; font-size: 22px; font-weight: 700;">Allocation Submitted!</h2>
-            <p style="color: #64748b; font-size: 14px; margin-bottom: 18px;">Recorded successfully in database.</p>
-            <div id="summary-content" style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:16px 20px; text-align:left; margin: 0 auto 20px; max-width:500px; font-size: 14px; line-height: 1.6;"></div>
-            <div style="background: #f0fdf4; border: 1.5px solid #86efac; border-radius: 12px; padding: 14px 18px; max-width: 500px; margin: 0 auto 16px; color: #166534; font-size: 13.5px; font-weight: 600; text-align: left;">
-                Send the decision in the WhatsApp group yourself, then confirm below. Render removes it after the local scanner syncs it too.
-            </div>
-            <div id="whatsapp-status" style="margin-top:10px; font-size:13px; color:#64748b;"></div>
-            <button id="whatsapp-shared-btn" onclick="confirmWhatsAppShared()" disabled style="display:none; margin:0 auto; padding:12px 18px; border:0; border-radius:8px; background:#166534; color:white; font-weight:700;">I sent it in the group</button>
-        </div>
-
         <div class="modal" id="add-modal">
             <div class="modal-content">
                 <h3 style="margin-top:0;">➕ Add Manufacturer</h3>
@@ -2775,38 +2763,7 @@ def bid_page():
             const TENDER_NO = {json.dumps(tender['tender_no'])};
             const TENDER_NAME = {json.dumps(tender['tender_name'])};
             const AUTHORIZED_ROLE = {json.dumps(authorized_role)};
-            let decisionActionId = null;
             document.getElementById('form-card').style.display = 'block';
-
-            async function confirmWhatsAppShared() {{
-                const button = document.getElementById('whatsapp-shared-btn');
-                const status = document.getElementById('whatsapp-status');
-                if (!decisionActionId) return;
-                button.disabled = true;
-                try {{
-                    const response = await fetch('/api/mark_whatsapp_shared', {{
-                        method: 'POST',
-                        headers: {{'Content-Type': 'application/json'}},
-                        body: JSON.stringify({{id: decisionActionId}})
-                    }});
-                    const result = await response.json();
-                    if (!response.ok || result.status !== 'ok') {{
-                        throw new Error(result.message || 'Could not save WhatsApp share confirmation.');
-                    }}
-                    status.textContent = result.message;
-                    status.style.color = '#15803d';
-                    button.textContent = 'WhatsApp send confirmed';
-                    const saved = JSON.parse(sessionStorage.getItem('san-tender-share:' + TENDER_NO) || 'null');
-                    if (saved) {{
-                        saved.whatsapp_shared = true;
-                        sessionStorage.setItem('san-tender-share:' + TENDER_NO, JSON.stringify(saved));
-                    }}
-                }} catch (error) {{
-                    status.textContent = error.message;
-                    status.style.color = '#b91c1c';
-                    button.disabled = false;
-                }}
-            }}
 
             function updateAssignmentCount() {{
                 const assigned = document.querySelectorAll('#items-tbody .item-row[data-manufacturer]:not([data-manufacturer=""])').length;
@@ -2897,6 +2854,7 @@ def bid_page():
                 const subBtn = document.getElementById('sub-btn');
                 subBtn.disabled = true;
                 subBtn.innerText = 'SAVING ALLOCATION...';
+                const sendingWindow = window.open('about:blank', '_blank');
                 fetch('/api/submit_allocation', {{
                     method: 'POST',
                     headers: {{'Content-Type': 'application/json'}},
@@ -2913,33 +2871,17 @@ def bid_page():
                 }})
                 .then(d => {{
                     if (d.status !== 'ok') throw new Error(d.message || 'Error saving');
-                    decisionActionId = d.action_id;
-                    sessionStorage.setItem('san-tender-share:' + TENDER_NO, JSON.stringify({{
-                        action_id: d.action_id,
-                        whatsapp_shared: false
-                    }}));
-                    const sharedButton = document.getElementById('whatsapp-shared-btn');
-                    sharedButton.disabled = false;
-                    sharedButton.style.display = 'inline-block';
-                    document.getElementById('form-card').style.display = 'none';
-                    let list = '<ul style="margin:6px 0; padding-left:18px;">';
-                    allocs.forEach(a => {{ 
-                        list += `<li><b>${{a.item_name}}</b> (Qty: ${{a.quantity}}) ➔ <span style="color:#16a34a; font-weight:bold;">${{a.manufacturer}}</span></li>`;
-                    }});
-                    list += '</ul>';
-                    document.getElementById('summary-content').innerHTML = `
-                        <div><b>Tender:</b> ${{TENDER_NO}} — ${{TENDER_NAME}}</div>
-                        <div><b>Approved By:</b> ${{approver}}</div>
-                        <div><b>Items Allocated:</b> ${{list}}</div>
-                    `;
-                    const _wsStat = document.getElementById('whatsapp-status');
-                    if (_wsStat) {{
-                        _wsStat.textContent = 'After sending the decision in WhatsApp, confirm it here.';
+                    const sendingUrl = '/decision-sending/' + d.action_id;
+                    if (sendingWindow) {{
+                        sendingWindow.location.href = sendingUrl;
+                        document.getElementById('form-card').innerHTML =
+                            '<h2>Decision recorded</h2><p>Continue in the sending page that opened.</p>';
+                    }} else {{
+                        window.location.assign(sendingUrl);
                     }}
-                    const _succCard = document.getElementById('success-card');
-                    if (_succCard) _succCard.style.display = 'block';
                 }})
                 .catch(err => {{
+                    if (sendingWindow) sendingWindow.close();
                     alert('Submission failed: ' + err.message);
                     subBtn.disabled = false;
                     subBtn.innerText = 'SUBMIT MANUFACTURER ALLOCATION';
@@ -2961,127 +2903,166 @@ def dont_bid():
     raw_tender = request.args.get("tender") or request.args.get("id") or "IND2414"
     tender_no = raw_tender.strip().upper()
 
-    return f"""<!DOCTYPE html>
-    <html>
+    return f"""    <!DOCTYPE html>
+    <html lang="en">
     <head>
-        <title>Tender Decision — {tender_no}</title>
+        <title>Not Bid — {html_lib.escape(tender_no)}</title>
         <meta name="viewport" content="width=device-width, initial-scale=1">
-        <style>
-            * {{ box-sizing: border-box; }}
-            body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f8fafc; padding: 20px; color: #0f172a; text-align: center; }}
-            .card {{ max-width: 440px; margin: 40px auto; background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); border: 1px solid #e2e8f0; }}
-        </style>
     </head>
-    <body>
-        <div class="card" id="reject-card" style="display:none; background: #fff5f5; border-color: #fecaca; padding: 36px 24px;">
-            <h1 style="color: #dc2626; margin: 0 0 10px 0; font-size: 24px;">🚫 MOVED TO NOT DONE</h1>
-            <p style="font-size: 16px;">Tender <b>{tender_no}</b> recorded as NOT BID.</p>
-            <p style="color: #64748b; font-size: 14px; margin-bottom: 20px;">Decision by: <b id="user-display" style="color:#0f172a;">{authorized_role}</b></p>
-            <div style="background: #fef2f2; border: 1.5px solid #fecaca; border-radius: 12px; padding: 14px 18px; max-width: 500px; margin: 0 auto 16px; color: #991b1b; font-size: 13.5px; font-weight: 600; text-align: left;">
-                Send the decision in the WhatsApp group yourself, then confirm below. Render removes it after the local scanner syncs it too.
-            </div>
-            <div id="whatsapp-status" style="margin-top:10px; font-size:13px; color:#64748b;"></div>
-            <button id="whatsapp-shared-btn" onclick="confirmWhatsAppShared()" disabled style="display:none; margin:0 auto; padding:12px 18px; border:0; border-radius:8px; background:#166534; color:white; font-weight:700;">I sent it in the group</button>
-        </div>
-
+    <body style="font-family:Segoe UI, sans-serif; background:#f8fafc; color:#0f172a; text-align:center; padding:32px;">
+        <main style="max-width:440px; margin:40px auto; background:white; padding:28px; border-radius:12px; box-shadow:0 4px 20px rgba(0,0,0,.08);">
+            <h1>Record NOT BID decision</h1>
+            <p>Tender <b>{html_lib.escape(tender_no)}</b></p>
+            <p>Decision by <b>{html_lib.escape(authorized_role)}</b></p>
+            <button id="submit-decision" type="button" onclick="submitNotBid()" style="padding:12px 18px; border:0; border-radius:8px; background:#b91c1c; color:white; font-weight:700;">Submit NOT BID</button>
+            <p id="decision-status" role="status"></p>
+        </main>
         <script>
-            const TENDER_NO = {json.dumps(tender_no)};
-            const userName = {json.dumps(authorized_role)};
-            let decisionActionId = null;
-            const decisionStorageKey = 'san-tender-share:' + TENDER_NO;
-
-            function showDecisionForSharing(decision) {{
-                decisionActionId = decision.action_id;
-                const sharedButton = document.getElementById('whatsapp-shared-btn');
-                const status = document.getElementById('whatsapp-status');
-                if (decision.whatsapp_shared) {{
-                    sharedButton.disabled = true;
-                    sharedButton.style.display = 'block';
-                    sharedButton.textContent = 'WhatsApp send confirmed';
-                    status.textContent = 'WhatsApp send already confirmed.';
-                    status.style.color = '#15803d';
-                }} else {{
-                    sharedButton.disabled = false;
-                    sharedButton.style.display = 'inline-block';
-                    status.textContent = 'After sending the decision in WhatsApp, confirm it here.';
-                }}
-                document.getElementById('reject-card').style.display = 'block';
-            }}
-
-            async function confirmWhatsAppShared() {{
-                const button = document.getElementById('whatsapp-shared-btn');
-                const status = document.getElementById('whatsapp-status');
-                if (!decisionActionId) return;
-                button.disabled = true;
+            const decisionStorageKey = 'san-tender-share:' + {json.dumps(tender_no)};
+            const decisionStatus = document.getElementById('decision-status');
+            const savedDecision = sessionStorage.getItem(decisionStorageKey);
+            if (savedDecision) {{
                 try {{
-                    const response = await fetch('/api/mark_whatsapp_shared', {{
-                        method: 'POST',
-                        headers: {{'Content-Type': 'application/json'}},
-                        body: JSON.stringify({{id: decisionActionId}})
-                    }});
-                    const result = await response.json();
-                    if (!response.ok || result.status !== 'ok') {{
-                        throw new Error(result.message || 'Could not save WhatsApp share confirmation.');
-                    }}
-                    status.textContent = result.message;
-                    status.style.color = '#15803d';
-                    button.textContent = 'WhatsApp send confirmed';
-                    const saved = JSON.parse(sessionStorage.getItem(decisionStorageKey) || 'null');
-                    if (saved) {{
-                        saved.whatsapp_shared = true;
-                        sessionStorage.setItem(decisionStorageKey, JSON.stringify(saved));
+                    const actionId = JSON.parse(savedDecision).action_id;
+                    if (actionId) {{
+                        window.location.replace('/decision-sending/' + actionId);
                     }}
                 }} catch (error) {{
-                    status.textContent = error.message;
-                    status.style.color = '#b91c1c';
-                    button.disabled = false;
+                    sessionStorage.removeItem(decisionStorageKey);
                 }}
             }}
-
-            function recordRejection(userName) {{
-                const savedDecision = sessionStorage.getItem(decisionStorageKey);
-                if (savedDecision) {{
-                    try {{
-                        showDecisionForSharing(JSON.parse(savedDecision));
-                        return;
-                    }} catch (error) {{
-                        sessionStorage.removeItem(decisionStorageKey);
-                    }}
+            async function submitNotBid() {{
+                if (sessionStorage.getItem(decisionStorageKey)) {{
+                    const actionId = JSON.parse(sessionStorage.getItem(decisionStorageKey)).action_id;
+                    window.location.replace('/decision-sending/' + actionId);
+                    return;
                 }}
-                document.getElementById('reject-card').style.display = 'block';
-                document.getElementById('user-display').innerText = userName;
-
+                const button = document.getElementById('submit-decision');
+                const sendingWindow = window.open('about:blank', '_blank');
+                button.disabled = true;
+                button.textContent = 'SAVING DECISION...';
                 fetch('/api/record_dontbid', {{
                     method: 'POST',
                     headers: {{'Content-Type': 'application/json'}},
-                    body: JSON.stringify({{tender_no: TENDER_NO}})
+                    body: JSON.stringify({{tender_no: {json.dumps(tender_no)}}})
                 }})
                 .then(async response => {{
                     const result = await response.json();
                     if (!response.ok || result.status !== 'ok') {{
                         throw new Error(result.message || 'Decision could not be saved.');
                     }}
-                    decisionActionId = result.action_id;
-                    const savedDecision = {{
-                        action_id: result.action_id,
-                        whatsapp_shared: false
-                    }};
-                    sessionStorage.setItem(decisionStorageKey, JSON.stringify(savedDecision));
-                    showDecisionForSharing(savedDecision);
+                    sessionStorage.setItem(decisionStorageKey, JSON.stringify({{action_id: result.action_id}}));
+                    const sendingUrl = '/decision-sending/' + result.action_id;
+                    if (sendingWindow) {{
+                        sendingWindow.location.href = sendingUrl;
+                        document.querySelector('main').innerHTML =
+                            '<h1>Decision recorded</h1><p>Continue in the sending page that opened.</p>';
+                    }} else {{
+                        window.location.replace(sendingUrl);
+                    }}
                 }})
                 .catch(error => {{
-                    document.getElementById('reject-card').innerHTML =
-                        '<h2 style="color:#dc2626">Decision was not saved</h2><p>' +
-                        error.message + '</p>';
+                    if (sendingWindow) sendingWindow.close();
+                    decisionStatus.textContent = 'Decision was not saved: ' + error.message;
+                    decisionStatus.style.color = '#b91c1c';
+                    button.disabled = false;
+                    button.textContent = 'Submit NOT BID';
                 }});
-
             }}
-
-            recordRejection(userName);
+            if (savedDecision) document.getElementById('submit-decision').disabled = true;
         </script>
     </body>
     </html>
     """
+
+@app.route("/decision-sending/<int:action_id>")
+def decision_sending_page(action_id):
+    if not _current_member():
+        return auth_gate_response()
+
+    try:
+        conn = get_db()
+        try:
+            row = conn.execute(
+                "SELECT action_type, tender_no, data_json FROM pending_sync WHERE id = ?",
+                (action_id,),
+            ).fetchone()
+        finally:
+            conn.close()
+        if row is None:
+            return "This decision has already been cleared from Render.", 404
+        if row["action_type"] not in {"BID_ALLOCATION", "NOT_BID"}:
+            return "This action is not a manager decision.", 404
+
+        action_data = json.loads(row["data_json"])
+        whatsapp_text = _whatsapp_decision_message(row["action_type"], action_data)
+        whatsapp_url = "https://api.whatsapp.com/send?text=" + urllib.parse.quote(whatsapp_text)
+        html = render_template_string(
+            """<!doctype html>
+            <html lang="en">
+            <head>
+                <title>Send Tender Decision</title>
+                <meta name="viewport" content="width=device-width, initial-scale=1">
+                <style>
+                    body { font-family:Segoe UI,sans-serif; background:#f8fafc; color:#0f172a; padding:20px; text-align:center; }
+                    main { max-width:480px; margin:32px auto; background:#fff; padding:28px; border-radius:12px; box-shadow:0 4px 20px rgba(0,0,0,.08); }
+                    pre { white-space:pre-wrap; text-align:left; background:#f1f5f9; padding:14px; border-radius:8px; }
+                    button, .send-link { display:inline-block; margin:8px; padding:12px 18px; border:0; border-radius:8px; font-weight:700; text-decoration:none; cursor:pointer; }
+                    .send-link { background:#25D366; color:#fff; }
+                    button { background:#166534; color:#fff; }
+                </style>
+            </head>
+            <body>
+                <main>
+                    <h1>Send this decision to the WhatsApp group</h1>
+                    <p>Tender {{ tender_no }} is recorded. Choose the correct decision group in WhatsApp and send this prepared message.</p>
+                    <pre>{{ message }}</pre>
+                    <a class="send-link" href="{{ whatsapp_url }}" target="_blank" rel="noopener noreferrer">Continue to WhatsApp</a>
+                    <p>After sending, return here and confirm. The local scanner must also sync this decision before Render deletes it.</p>
+                    <button id="sent-button" type="button">Sent to the group</button>
+                    <p id="status" role="status"></p>
+                </main>
+                <script>
+                    const actionId = {{ action_id|tojson }};
+                    const button = document.getElementById('sent-button');
+                    const status = document.getElementById('status');
+                    button.addEventListener('click', async () => {
+                        button.disabled = true;
+                        try {
+                            const response = await fetch('/api/mark_whatsapp_shared', {
+                                method: 'POST',
+                                headers: {'Content-Type': 'application/json'},
+                                body: JSON.stringify({id: actionId})
+                            });
+                            const result = await response.json();
+                            if (!response.ok || result.status !== 'ok') {
+                                throw new Error(result.message || 'Could not confirm the WhatsApp send.');
+                            }
+                            status.textContent = result.message;
+                            status.style.color = '#15803d';
+                            window.close();
+                            window.setTimeout(() => {
+                                status.textContent = 'Confirmation saved. You can close this page.';
+                            }, 250);
+                        } catch (error) {
+                            status.textContent = error.message;
+                            status.style.color = '#b91c1c';
+                            button.disabled = false;
+                        }
+                    });
+                </script>
+            </body>
+            </html>""",
+            tender_no=row["tender_no"],
+            message=whatsapp_text,
+            whatsapp_url=whatsapp_url,
+            action_id=action_id,
+        )
+        response = app.make_response(html)
+        response.headers["Cache-Control"] = "no-store"
+        return response
+    except Exception as e:
+        return f"Could not load the decision sending page: {e}", 500
 
 _FAILED_LOGIN_ATTEMPTS = {}
 _LOGIN_LOCK = threading.Lock()

@@ -90,11 +90,11 @@ class WhatsAppDecisionSharingTests(unittest.TestCase):
         self.assertEqual(row["synced"], 0)
 
         page = self.client.get("/bid?tender=IND2712")
-        self.assertIn(b"I sent it in the group", page.data)
-        self.assertIn(b"After sending the decision in WhatsApp, confirm it here.", page.data)
         self.assertNotIn(b"api.whatsapp.com/send", page.data)
         self.assertNotIn(b"Open WhatsApp", page.data)
-        self.assertNotIn(b"window.open(", page.data)
+        self.assertIn(b"const sendingWindow = window.open('about:blank', '_blank')", page.data)
+        self.assertIn(b"sendingWindow.location.href = sendingUrl", page.data)
+        self.assertIn(b"window.location.assign(sendingUrl)", page.data)
 
     def test_rejection_returns_prefilled_whatsapp_confirmation(self):
         response = self.client.post(
@@ -107,12 +107,30 @@ class WhatsAppDecisionSharingTests(unittest.TestCase):
         self.assertIn("IND2495/CALL-3", result["whatsapp_text"])
         self.assertIn("Developer", result["whatsapp_text"])
         page = self.client.get("/dontbid?tender=IND2495/CALL-3")
-        self.assertIn(b"I sent it in the group", page.data)
-        self.assertIn(b"After sending the decision in WhatsApp, confirm it here.", page.data)
         self.assertNotIn(b"api.whatsapp.com/send", page.data)
         self.assertNotIn(b"Open WhatsApp", page.data)
-        self.assertNotIn(b"window.location.assign(", page.data)
-        self.assertIn(b"sessionStorage.setItem(decisionStorageKey", page.data)
+        self.assertIn(b"const sendingWindow = window.open('about:blank', '_blank')", page.data)
+        self.assertIn(b"sendingWindow.location.href = sendingUrl", page.data)
+        self.assertIn(b"window.location.replace(sendingUrl)", page.data)
+        self.assertIn(b"window.location.replace('/decision-sending/' + actionId)", page.data)
+
+    def test_sending_page_prepares_manual_whatsapp_and_closes_after_confirmation(self):
+        result = self._submit_approval()
+        page = self.client.get(f"/decision-sending/{result['action_id']}")
+        self.assertEqual(page.status_code, 200)
+        self.assertIn(b"Continue to WhatsApp", page.data)
+        self.assertIn(b"Choose the correct decision group", page.data)
+        self.assertIn(b"Sent to the group", page.data)
+        self.assertIn(b"window.close()", page.data)
+        self.assertIn(b"api.whatsapp.com/send?text=", page.data)
+
+    def test_sending_page_requires_member_login(self):
+        result = self._submit_approval()
+        response = tender_app.app.test_client().get(
+            f"/decision-sending/{result['action_id']}"
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Member access code", response.data)
 
     def test_action_is_deleted_after_share_and_local_sync_in_either_order(self):
         result = self._submit_approval()
