@@ -102,19 +102,33 @@ def get_decision_sent(decision_id):
 
 
 def send_whatsapp_text(text):
+    return send_whatsapp_text_result(text)["sent"]
+
+
+def send_whatsapp_text_result(text):
     base_url = os.environ.get("EVO_BASE_URL", "").strip().rstrip("/")
     api_key = os.environ.get("EVO_API_KEY", "").strip()
     instance = os.environ.get("EVO_INSTANCE", "").strip()
     group_jid = os.environ.get("WHATSAPP_GROUP_JID", "").strip()
-    if not all((base_url, api_key, instance, group_jid)):
-        logger.error(
-            "WhatsApp send is not configured; set EVO_BASE_URL, EVO_API_KEY, "
-            "EVO_INSTANCE, and WHATSAPP_GROUP_JID."
+    missing = [
+        name for name, value in (
+            ("EVO_BASE_URL", base_url),
+            ("EVO_API_KEY", api_key),
+            ("EVO_INSTANCE", instance),
+            ("WHATSAPP_GROUP_JID", group_jid),
         )
-        return False
+        if not value
+    ]
+    if missing:
+        logger.error(
+            "WhatsApp send configuration is incomplete; missing: %s.",
+            ", ".join(missing),
+        )
+        return {"sent": False, "error": "missing_configuration", "missing": missing}
 
     headers = {"apikey": api_key, "Content-Type": "application/json"}
     state_url = f"{base_url}/instance/connectionState/{instance}"
+    instance_state = "unknown"
     try:
         state_response = requests.get(
             state_url,
@@ -126,6 +140,7 @@ def send_whatsapp_text(text):
         instance_state = (
             (state_data.get("instance") or {}).get("state")
             or state_data.get("state")
+            or "unknown"
         )
         if instance_state != "open":
             logger.warning(
@@ -133,14 +148,18 @@ def send_whatsapp_text(text):
                 instance,
                 instance_state,
             )
-    except (requests.RequestException, ValueError, AttributeError):
+    except (requests.RequestException, ValueError, AttributeError) as error:
+        state_error = type(error).__name__
         logger.warning(
             "Could not verify Evolution API instance %r connection state; attempting message send anyway.",
             instance,
             exc_info=True,
         )
+    else:
+        state_error = None
 
     send_url = f"{base_url}/message/sendText/{instance}"
+    last_error = None
     for attempt in range(_SEND_ATTEMPTS):
         if attempt:
             time.sleep(2 ** (attempt - 1))
@@ -153,20 +172,36 @@ def send_whatsapp_text(text):
             )
             response.raise_for_status()
             logger.info("WhatsApp message accepted by Evolution API for instance %r.", instance)
-            return True
-        except requests.RequestException:
+            return {
+                "sent": True,
+                "instance_state": instance_state,
+            }
+        except requests.RequestException as error:
+            response = getattr(error, "response", None)
+            last_error = (
+                f"http_{response.status_code}"
+                if response is not None
+                else type(error).__name__
+            )
             logger.exception(
-                "WhatsApp send attempt %d/%d failed for instance %r.",
+                "WhatsApp send attempt %d/%d failed for instance %r (%s).",
                 attempt + 1,
                 _SEND_ATTEMPTS,
                 instance,
+                last_error,
             )
 
     logger.error(
-        "WhatsApp message was not accepted after %d attempts; it remains queued for retry.",
+        "WhatsApp message was not accepted after %d attempts; it remains queued for retry (%s).",
         _SEND_ATTEMPTS,
+        last_error or "unknown_error",
     )
-    return False
+    return {
+        "sent": False,
+        "error": last_error or "unknown_error",
+        "instance_state": instance_state,
+        "connection_check_error": state_error,
+    }
 
 
 def relay_pending_decisions():

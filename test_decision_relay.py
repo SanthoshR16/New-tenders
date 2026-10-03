@@ -48,6 +48,21 @@ class EvolutionWhatsAppTests(unittest.TestCase):
             timeout=15,
         )
 
+    def test_send_whatsapp_text_result_identifies_missing_config_without_values(self):
+        with patch.dict(os.environ, {}, clear=True):
+            result = decision_relay.send_whatsapp_text_result("test")
+
+        self.assertEqual(result, {
+            "sent": False,
+            "error": "missing_configuration",
+            "missing": [
+                "EVO_BASE_URL",
+                "EVO_API_KEY",
+                "EVO_INSTANCE",
+                "WHATSAPP_GROUP_JID",
+            ],
+        })
+
     def test_send_whatsapp_text_retries_three_times_and_returns_false(self):
         failure = requests.HTTPError("temporary failure")
         failed_response = unittest.mock.Mock()
@@ -230,28 +245,41 @@ class DecisionRelayRouteTests(unittest.TestCase):
         with patch.dict(os.environ, {"RELAY_API_TOKEN": self.TOKEN}), \
                 patch.object(
                     tender_app.decision_relay,
-                    "send_whatsapp_text",
-                    return_value=True,
+                    "send_whatsapp_text_result",
+                    return_value={"sent": True, "instance_state": "open"},
                 ) as send:
             denied = self.client.post("/test-whatsapp")
             accepted = self.client.post("/test-whatsapp", headers=self.headers())
 
         self.assertEqual(denied.status_code, 401)
         self.assertEqual(accepted.status_code, 200)
-        self.assertEqual(accepted.get_json(), {"status": "ok", "sent": True})
+        self.assertEqual(accepted.get_json(), {
+            "status": "ok",
+            "sent": True,
+            "instance_state": "open",
+        })
         send.assert_called_once_with("Test message from tenderrelay")
 
     def test_test_whatsapp_route_returns_failure_without_failing_open(self):
         with patch.dict(os.environ, {"RELAY_API_TOKEN": self.TOKEN}), \
                 patch.object(
                     tender_app.decision_relay,
-                    "send_whatsapp_text",
-                    return_value=False,
+                    "send_whatsapp_text_result",
+                    return_value={
+                        "sent": False,
+                        "error": "ConnectionError",
+                        "instance_state": "unknown",
+                    },
                 ) as send:
             response = self.client.post("/test-whatsapp", headers=self.headers())
 
         self.assertEqual(response.status_code, 502)
-        self.assertEqual(response.get_json(), {"status": "error", "sent": False})
+        self.assertEqual(response.get_json(), {
+            "status": "error",
+            "sent": False,
+            "error": "ConnectionError",
+            "instance_state": "unknown",
+        })
         send.assert_called_once_with("Test message from tenderrelay")
 
     def test_scan_start_relays_then_clears_owned_storage_only(self):

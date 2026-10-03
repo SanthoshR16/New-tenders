@@ -3355,10 +3355,13 @@ def test_whatsapp():
     authorized, status_code = _relay_token_is_valid()
     if not authorized:
         return _relay_auth_error(status_code)
-    sent = decision_relay.send_whatsapp_text("Test message from tenderrelay")
-    return jsonify({"status": "ok" if sent else "error", "sent": sent}), (
-        200 if sent else 502
+    result = decision_relay.send_whatsapp_text_result(
+        "Test message from tenderrelay"
     )
+    return jsonify({
+        "status": "ok" if result["sent"] else "error",
+        **result,
+    }), 200 if result["sent"] else 502
 
 
 @app.route("/api/relay/scan-start", methods=["POST"])
