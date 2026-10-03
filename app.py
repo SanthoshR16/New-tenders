@@ -166,23 +166,57 @@ AUTH_GATE_HTML = """<!DOCTYPE html>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>San Tenders — Member Sign In</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
-        body { font-family: "Segoe UI", sans-serif; background: #f1f5f9; color: #0f172a; }
-        .card { max-width: 420px; margin: 12vh auto; padding: 28px; background: white;
-                border-radius: 12px; box-shadow: 0 8px 30px #0f172a18; text-align: center; }
-        #status { color: #475569; line-height: 1.5; }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f8fafc; color: #0f172a; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px 16px; -webkit-font-smoothing: antialiased; }
+        .card { max-width: 440px; width: 100%; background: #ffffff; border-radius: 16px; box-shadow: 0 10px 30px -5px rgba(15, 23, 42, 0.08), 0 4px 6px -2px rgba(15, 23, 42, 0.03); overflow: hidden; border: 1px solid #e2e8f0; text-align: center; }
+        .hdr { background: linear-gradient(135deg, #15803d 0%, #166534 100%); color: #ffffff; padding: 28px 24px; position: relative; }
+        .badge { display: inline-flex; align-items: center; gap: 6px; background: rgba(255,255,255,0.2); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); color: #ffffff; padding: 4px 12px; border-radius: 9999px; font-size: 11px; font-weight: 700; letter-spacing: 0.5px; border: 1px solid rgba(255,255,255,0.25); margin-bottom: 10px; text-transform: uppercase; }
+        .hdr h2 { font-size: 21px; font-weight: 700; color: #ffffff; margin-bottom: 4px; letter-spacing: -0.01em; }
+        .hdr p { font-size: 13px; color: rgba(255, 255, 255, 0.88); font-weight: 500; }
+        .roles { display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+        .role-chip { font-size: 11.5px; font-weight: 600; background: rgba(255,255,255,0.15); color: #ffffff; padding: 3px 10px; border-radius: 9999px; border: 1px solid rgba(255,255,255,0.2); }
+        .content { padding: 28px 24px; }
+        #status { font-size: 13.5px; color: #475569; line-height: 1.5; margin-bottom: 18px; font-weight: 500; }
+        .form-group { text-align: left; margin-bottom: 16px; }
+        .form-group label { display: block; font-size: 12.5px; font-weight: 600; color: #334155; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .input-wrap { position: relative; }
+        .input-wrap input { width: 100%; padding: 12px 14px; font-size: 14px; font-family: inherit; border: 1.5px solid #cbd5e1; border-radius: 10px; background: #f8fafc; color: #0f172a; outline: none; transition: all 0.15s ease; }
+        .input-wrap input:focus { border-color: #15803d; background: #ffffff; box-shadow: 0 0 0 3px rgba(21, 128, 61, 0.12); }
+        .submit-btn { width: 100%; padding: 13px; background: #15803d; color: #ffffff; border: 0; border-radius: 10px; font-size: 14.5px; font-weight: 700; font-family: inherit; cursor: pointer; transition: all 0.15s ease; box-shadow: 0 2px 4px rgba(21, 128, 61, 0.2); }
+        .submit-btn:hover:not(:disabled) { background: #166534; transform: translateY(-1px); box-shadow: 0 4px 8px rgba(21, 128, 61, 0.25); }
+        .submit-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+        .footer-note { margin-top: 16px; font-size: 12px; color: #94a3b8; font-weight: 500; }
     </style>
 </head>
 <body>
     <main class="card">
-        <h2>San Tenders secure access</h2>
-        <p id="status" role="status" aria-live="polite">Checking saved access…</p>
-        <form id="login-form" style="display:none">
-            <label for="access-code">Member access code</label>
-            <input id="access-code" type="password" autocomplete="current-password"
-                   required minlength="24" style="box-sizing:border-box;width:100%;padding:12px;margin:12px 0;border:1px solid #cbd5e1;border-radius:6px">
-            <button type="submit" style="width:100%;padding:12px;background:#2563eb;color:white;border:0;border-radius:6px;font-weight:700">Continue</button>
-        </form>
+        <div class="hdr">
+            <div class="badge">🔐 Security Gateway</div>
+            <h2>San Tenders</h2>
+            <p>Authorized Decision Approvals</p>
+            <div class="roles">
+                <span class="role-chip">Kamal Sir</span>
+                <span class="role-chip">Uday Sir</span>
+                <span class="role-chip">Developer</span>
+            </div>
+        </div>
+        <div class="content">
+            <p id="status" role="status" aria-live="polite">Checking saved credentials…</p>
+            <form id="login-form" style="display:none">
+                <div class="form-group">
+                    <label for="access-code">Enter Access Code</label>
+                    <div class="input-wrap">
+                        <input id="access-code" type="password" autocomplete="current-password" required minlength="24" placeholder="Paste your 24+ character security code">
+                    </div>
+                </div>
+                <button type="submit" class="submit-btn">Unlock Tender Portal</button>
+            </form>
+            <div class="footer-note">Protected via End-to-End HMAC Encryption</div>
+        </div>
     </main>
     <script>
         let reopeningTender = false;
@@ -222,6 +256,7 @@ AUTH_GATE_HTML = """<!DOCTYPE html>
             const status = document.getElementById("status");
             const button = event.currentTarget.querySelector("button");
             button.disabled = true;
+            button.textContent = "Verifying Access…";
             try {
                 const response = await fetch("/api/auth/login", {
                     method: "POST",
@@ -231,15 +266,20 @@ AUTH_GATE_HTML = """<!DOCTYPE html>
                 });
                 const result = await response.json();
                 if (!response.ok) {
-                    status.textContent = result.message || "This device is not authorized.";
+                    status.textContent = result.message || "This access code is invalid.";
+                    status.style.color = "#dc2626";
                     button.disabled = false;
+                    button.textContent = "Unlock Tender Portal";
                     return;
                 }
                 status.textContent = "Access confirmed for " + result.role + ". Opening tender…";
+                status.style.color = "#15803d";
                 window.location.reload();
             } catch (error) {
                 status.textContent = "Could not sign in. Check your connection and retry.";
+                status.style.color = "#dc2626";
                 button.disabled = false;
+                button.textContent = "Unlock Tender Portal";
             }
         });
     </script>
