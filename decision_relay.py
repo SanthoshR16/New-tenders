@@ -35,28 +35,33 @@ def _connect_postgres():
                 decided_by TEXT NOT NULL,
                 decided_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 sent BOOLEAN NOT NULL DEFAULT FALSE,
-                sent_at TIMESTAMPTZ
+                sent_at TIMESTAMPTZ,
+                message_text TEXT
             )
+        """)
+        cursor.execute("""
+            ALTER TABLE tender_app.tender_decisions
+            ADD COLUMN IF NOT EXISTS message_text TEXT
         """)
     connection.commit()
     return connection
 
 
-def store_decision(tender_id, tender_title, decision, decided_by):
+def store_decision(tender_id, tender_title, decision, decided_by, message_text):
     if decision not in {"BID", "NO BID"}:
         raise ValueError("Decision must be BID or NO BID.")
-    if not tender_id or not tender_title or not decided_by:
-        raise ValueError("Tender ID, title, and approver are required.")
+    if not tender_id or not tender_title or not decided_by or not message_text:
+        raise ValueError("Tender ID, title, approver, and message are required.")
 
     connection = _connect_postgres()
     try:
         with connection.cursor() as cursor:
             cursor.execute("""
                 INSERT INTO tender_app.tender_decisions
-                    (tender_id, tender_title, decision, decided_by)
-                VALUES (%s, %s, %s, %s)
+                    (tender_id, tender_title, decision, decided_by, message_text)
+                VALUES (%s, %s, %s, %s, %s)
                 RETURNING id
-            """, (tender_id, tender_title, decision, decided_by))
+            """, (tender_id, tender_title, decision, decided_by, message_text))
             decision_id = cursor.fetchone()["id"]
         connection.commit()
         return decision_id
@@ -118,7 +123,10 @@ def send_whatsapp_text(text):
         )
         state_response.raise_for_status()
         state_data = state_response.json()
-        instance_state = (state_data.get("instance") or {}).get("state")
+        instance_state = (
+            (state_data.get("instance") or {}).get("state")
+            or state_data.get("state")
+        )
         if instance_state != "open":
             logger.warning(
                 "Evolution API instance %r is not open (state=%r); attempting message send anyway.",
@@ -174,7 +182,7 @@ def relay_pending_decisions():
             )
             lock_acquired = True
             cursor.execute("""
-                SELECT id, tender_title, decision
+                SELECT id, tender_id, tender_title, decision, decided_by, message_text
                 FROM tender_app.tender_decisions
                 WHERE sent = FALSE
                 ORDER BY id
@@ -182,7 +190,7 @@ def relay_pending_decisions():
             decisions = cursor.fetchall()
 
         for decision in decisions:
-            message = f"{decision['tender_title']} - {decision['decision']}"
+            message = decision.get("message_text") or _format_stored_decision(decision)
             if not send_whatsapp_text(message):
                 failed_count += 1
                 continue
@@ -225,6 +233,20 @@ def relay_pending_decisions():
             except Exception:
                 logger.exception("Could not explicitly release the decision relay lock.")
         connection.close()
+
+
+def _format_stored_decision(decision):
+    heading = (
+        "✅ *BID APPROVED & MANUFACTURER ALLOCATED*"
+        if decision["decision"] == "BID"
+        else "🚫 *TENDER DECISION — NOT BID*"
+    )
+    return "\n".join((
+        heading,
+        "",
+        f"📌 *Tender:* {decision['tender_id']} - {decision['tender_title']}",
+        f"👤 *Decision By:* {decision['decided_by']}",
+    ))
 
 
 def clear_sent_decisions():

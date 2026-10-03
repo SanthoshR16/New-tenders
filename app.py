@@ -3182,6 +3182,7 @@ def record_dontbid_api():
                 tender_title=_get_decision_tender_title(tender_no, data),
                 decision="NO BID",
                 decided_by=user_name,
+                message_text=whatsapp_text,
             )
             conn = get_db()
             try:
@@ -3250,6 +3251,7 @@ def submit_allocation():
             tender_title=_get_decision_tender_title(tender_no, data),
             decision="BID",
             decided_by=data["approved_by"],
+            message_text=whatsapp_text,
         )
         conn = get_db()
         try:

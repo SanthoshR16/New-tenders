@@ -279,6 +279,7 @@ class WhatsAppDecisionSharingTests(unittest.TestCase):
             tender_title="Tender IND2712",
             decision="BID",
             decided_by="Developer",
+            message_text=result["whatsapp_text"],
         )
         self.relay_mocks[1].assert_called_once()
 
@@ -303,6 +304,7 @@ class WhatsAppDecisionSharingTests(unittest.TestCase):
             tender_title="IND2495/CALL-3",
             decision="NO BID",
             decided_by="Developer",
+            message_text=result["whatsapp_text"],
         )
         page = self.client.get("/dontbid?tender=IND2495/CALL-3")
         self.assertNotIn(b"api.whatsapp.com/send", page.data)

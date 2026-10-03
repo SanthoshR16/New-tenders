@@ -97,12 +97,19 @@ class DecisionStorageTests(unittest.TestCase):
                 tender_title="Example tender",
                 decision="BID",
                 decided_by="Kamal Sir",
+                message_text="📌 Tender: IND2712 - Example tender",
             )
 
         self.assertEqual(decision_id, 31)
         query, values = cursor.execute.call_args.args
         self.assertIn("INSERT INTO tender_app.tender_decisions", query)
-        self.assertEqual(values, ("IND2712", "Example tender", "BID", "Kamal Sir"))
+        self.assertEqual(values, (
+            "IND2712",
+            "Example tender",
+            "BID",
+            "Kamal Sir",
+            "📌 Tender: IND2712 - Example tender",
+        ))
         connection.commit.assert_called_once()
 
     def test_relay_marks_sent_only_after_whatsapp_accepts(self):
@@ -112,15 +119,18 @@ class DecisionStorageTests(unittest.TestCase):
         connection.cursor.return_value = cursor
         cursor.fetchall.return_value = [{
             "id": 5,
+            "tender_id": "IND2712",
             "tender_title": "Example tender",
             "decision": "NO BID",
+            "decided_by": "Kamal Sir",
+            "message_text": "🚫 Tender IND2712 - Example tender",
         }]
         with patch.object(decision_relay, "_connect_postgres", return_value=connection), \
                 patch.object(decision_relay, "send_whatsapp_text", return_value=False) as send:
             result = decision_relay.relay_pending_decisions()
 
         self.assertEqual(result, {"sent": 0, "failed": 1})
-        send.assert_called_once_with("Example tender - NO BID")
+        send.assert_called_once_with("🚫 Tender IND2712 - Example tender")
         updates = [
             call.args[0]
             for call in cursor.execute.call_args_list
@@ -135,8 +145,11 @@ class DecisionStorageTests(unittest.TestCase):
         connection.cursor.return_value = cursor
         cursor.fetchall.return_value = [{
             "id": 6,
+            "tender_id": "IND2713",
             "tender_title": "Example tender",
             "decision": "BID",
+            "decided_by": "Developer",
+            "message_text": "✅ Tender IND2713 - Example tender",
         }]
         events = []
         cursor.execute.side_effect = lambda query, *_args: events.append(
@@ -147,11 +160,16 @@ class DecisionStorageTests(unittest.TestCase):
             return True
 
         with patch.object(decision_relay, "_connect_postgres", return_value=connection), \
-                patch.object(decision_relay, "send_whatsapp_text", side_effect=send):
+                patch.object(
+                    decision_relay,
+                    "send_whatsapp_text",
+                    side_effect=send,
+                ) as send_mock:
             result = decision_relay.relay_pending_decisions()
 
         self.assertEqual(result, {"sent": 1, "failed": 0})
         self.assertLess(events.index("send"), events.index("update"))
+        send_mock.assert_called_once_with("✅ Tender IND2713 - Example tender")
         self.assertEqual(connection.commit.call_count, 2)
 
     def test_cleanup_deletes_only_successfully_sent_decisions(self):
