@@ -79,7 +79,7 @@ def init_db():
 
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
-    SESSION_COOKIE_SECURE=True,
+    SESSION_COOKIE_SECURE=os.environ.get("RENDER") is not None,
     SESSION_COOKIE_SAMESITE="Strict",
     PERMANENT_SESSION_LIFETIME=60 * 60 * 24 * 365 * 10,
 )
