@@ -2743,15 +2743,15 @@ def bid_page():
             <button type="button" class="btn-sub" id="sub-btn" onclick="submitAllocation()">SUBMIT MANUFACTURER ALLOCATION</button>
         </div>
 
-        <div class="card" id="success-card" style="display:none; text-align:center; padding: 40px 20px;">
-            <div style="font-size: 48px; margin-bottom: 10px;">✅</div>
-            <h2 style="color: #166534; margin: 0 0 10px 0;">Manufacturer Allocation Saved</h2>
-            <p style="color: #475569;">Recorded successfully. When local PC syncs, it updates local files & database.</p>
-            <div id="summary-content" style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:15px; text-align:left; margin: 20px auto; max-width:500px;"></div>
-            <p style="font-size:14px;">Share the prepared confirmation to your WhatsApp group, then return here and confirm that it was sent.</p>
-            <a id="whatsapp-share-btn" href="#" target="_blank" rel="noopener noreferrer" style="display:inline-block; padding:13px 20px; background:#25D366; color:white; text-decoration:none; border-radius:8px; font-weight:700;">Share confirmation to WhatsApp</a>
-            <button id="whatsapp-shared-btn" type="button" onclick="confirmWhatsAppShared()" disabled style="display:block; margin:12px auto 0; padding:11px 18px; border:0; border-radius:8px; background:#166534; color:white; font-weight:700;">I sent it to the group</button>
-            <div id="whatsapp-status" role="status" style="margin-top:12px; font-size:13px; font-weight:600;"></div>
+        <div class="card" id="success-card" style="display:none; text-align:center; padding: 40px 24px;">
+            <div style="font-size: 52px; margin-bottom: 12px;">✅</div>
+            <h2 style="color: #15803d; margin: 0 0 8px 0; font-size: 22px; font-weight: 700;">Allocation Submitted!</h2>
+            <p style="color: #64748b; font-size: 14px; margin-bottom: 18px;">Recorded successfully in database.</p>
+            <div id="summary-content" style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:16px 20px; text-align:left; margin: 0 auto 20px; max-width:500px; font-size: 14px; line-height: 1.6;"></div>
+            <div style="background: #f0fdf4; border: 1.5px solid #86efac; border-radius: 12px; padding: 14px 18px; max-width: 500px; margin: 0 auto 16px; color: #166534; font-size: 13.5px; font-weight: 600; text-align: left;">
+                ⚡ <b>Zero-Effort Automated:</b> The office system is automatically posting this confirmation directly to the WhatsApp group. You do not need to share or forward anything manually!
+            </div>
+            <a id="whatsapp-share-btn" href="#" target="_blank" rel="noopener noreferrer" style="display:inline-block; padding:10px 18px; background:#f1f5f9; color:#475569; text-decoration:none; border-radius:8px; font-size:12.5px; font-weight:600; border: 1px solid #cbd5e1;">(Optional) Open WhatsApp Group</a>
         </div>
 
         <div class="modal" id="add-modal">
@@ -2958,14 +2958,14 @@ def dont_bid():
         </style>
     </head>
     <body>
-        <div class="card" id="reject-card" style="display:none; background: #fff5f5; border-color: #fecaca;">
+        <div class="card" id="reject-card" style="display:none; background: #fff5f5; border-color: #fecaca; padding: 36px 24px;">
             <h1 style="color: #dc2626; margin: 0 0 10px 0; font-size: 24px;">🚫 MOVED TO NOT DONE</h1>
             <p style="font-size: 16px;">Tender <b>{tender_no}</b> recorded as NOT BID.</p>
-            <p style="color: #64748b; font-size: 14px;">Decision by: <b id="user-display" style="color:#0f172a;">{authorized_role}</b></p>
-            <p style="font-size:14px;">Share this prepared decision to your WhatsApp group, then return and confirm it was sent.</p>
-            <a id="whatsapp-share-btn" href="#" target="_blank" rel="noopener noreferrer" style="display:inline-block; padding:13px 20px; background:#25D366; color:white; text-decoration:none; border-radius:8px; font-weight:700;">Share confirmation to WhatsApp</a>
-            <button id="whatsapp-shared-btn" type="button" onclick="confirmWhatsAppShared()" disabled style="display:block; margin:12px auto 0; padding:11px 18px; border:0; border-radius:8px; background:#166534; color:white; font-weight:700;">I sent it to the group</button>
-            <p id="whatsapp-status" role="status" style="font-size:14px; font-weight:600;"></p>
+            <p style="color: #64748b; font-size: 14px; margin-bottom: 20px;">Decision by: <b id="user-display" style="color:#0f172a;">{authorized_role}</b></p>
+            <div style="background: #fef2f2; border: 1.5px solid #fecaca; border-radius: 12px; padding: 14px 18px; max-width: 500px; margin: 0 auto 16px; color: #991b1b; font-size: 13.5px; font-weight: 600; text-align: left;">
+                ⚡ <b>Zero-Effort Automated:</b> The office system is automatically notifying the WhatsApp group and moving this tender to Not Done Tenders. You're all done!
+            </div>
+            <a id="whatsapp-share-btn" href="#" target="_blank" rel="noopener noreferrer" style="display:inline-block; padding:10px 18px; background:#f1f5f9; color:#475569; text-decoration:none; border-radius:8px; font-size:12.5px; font-weight:600; border: 1px solid #cbd5e1;">(Optional) Open WhatsApp Group</a>
         </div>
 
         <script>
