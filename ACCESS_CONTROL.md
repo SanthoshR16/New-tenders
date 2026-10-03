@@ -29,24 +29,16 @@ verify which phone number is opening it. Scanner sync endpoints remain
 available to the local automation service and are not protected by member
 codes.
 
-## Telegram decision notifications
+## Sharing manager decisions to WhatsApp
 
-Telegram receives only manager decisions and manufacturer allocations. Tender
-documents and new-tender alerts remain on the existing local WhatsApp workflow.
-Create a bot with Telegram's `@BotFather`, add it to a private group, and send
-`/start@YourBotName` in that group. Run `setup_telegram_bot.py` from the local
-project to find the group's chat ID; the script prompts for the bot token
-without displaying or saving it. Set the following variables in the Render
-service environment:
+After a manager submits a bid allocation or marks a tender as not bid, the page
+shows a prefilled WhatsApp share link. The manager opens WhatsApp, selects the
+existing tender group, sends the message, returns to the decision page, and
+confirms that it was sent. A website cannot verify the final send because
+WhatsApp handles the recipient selection and message submission.
 
-- `TELEGRAM_BOT_TOKEN`: the token returned by `@BotFather`
-- `TELEGRAM_CHAT_ID`: the private group's numeric chat ID
-
-Never add the bot token to source control or send it in chat. Decision
-notifications are written to a SQLite outbox with the cloud decision and are
-retried on subsequent scanner sync requests if Telegram is temporarily
-unavailable. The notification is sent from the cloud when the manager submits
-the choice; the local Excel/database update still waits for the scanner PC's
-next sync. Render's local filesystem may be ephemeral, so pending cloud actions
-and notification retries are only restart-safe when the service uses persistent
-storage.
+The cloud keeps each manager decision until both the local scanner has
+processed it and the manager has confirmed sharing it. The local sync service
+then removes it from the cloud queue. If the computer is off, the decision
+stays queued until it syncs. New-tender/document WhatsApp alerts remain on the
+existing local scanner workflow.

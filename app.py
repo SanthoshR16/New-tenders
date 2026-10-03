@@ -4,14 +4,11 @@ import json
 import sqlite3
 import base64
 import urllib.parse
-import urllib.error
-import urllib.request
 import hashlib
 import hmac
 import secrets
-import time
 from functools import wraps
-from datetime import datetime, timezone
+from datetime import datetime
 from flask import Flask, request, jsonify, render_template_string, session
 
 app = Flask(__name__)
@@ -73,21 +70,6 @@ def init_db():
         synced INTEGER DEFAULT 0
     )
     """)
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS telegram_outbox (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        action_id INTEGER NOT NULL,
-        chunk_index INTEGER NOT NULL DEFAULT 0,
-        message_html TEXT NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        sent_at TIMESTAMP,
-        attempts INTEGER NOT NULL DEFAULT 0,
-        retry_after REAL NOT NULL DEFAULT 0,
-        claimed_until REAL,
-        last_error TEXT,
-        UNIQUE(action_id, chunk_index)
-    )
-    """)
     for m in INITIAL_MANUFACTURERS:
         cur.execute("INSERT OR IGNORE INTO manufacturers (name) VALUES (?)", (m,))
     for a in INITIAL_APPROVERS:
@@ -133,29 +115,19 @@ def require_member(view):
     return wrapped
 
 
-def _telegram_credentials():
-    token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
-    chat_id = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
-    return token, chat_id
-
-
-def _telegram_escape(value):
-    return html_lib.escape("" if value is None else str(value), quote=False)
-
-
-def _telegram_decision_message(action_type, data):
-    tender_no = _telegram_escape(data.get("tender_no"))
-    tender_name = _telegram_escape(data.get("tender_name"))
-    approved_by = _telegram_escape(data.get("approved_by"))
+def _whatsapp_decision_message(action_type, data):
+    tender_no = str(data.get("tender_no") or "")
+    tender_name = str(data.get("tender_name") or "")
+    approved_by = str(data.get("approved_by") or "")
     if action_type == "BID_ALLOCATION":
         lines = [
-            "✅ <b>BID APPROVED &amp; MANUFACTURER ALLOCATED</b>",
+            "✅ *BID APPROVED & MANUFACTURER ALLOCATED*",
             "",
-            f"📌 <b>Tender:</b> {tender_no}"
+            f"📌 *Tender:* {tender_no}"
             + (f" - {tender_name}" if tender_name and tender_name != tender_no else ""),
-            f"👤 <b>Approved By:</b> {approved_by}",
+            f"👤 *Approved By:* {approved_by}",
             "",
-            "🏭 <b>Allocations:</b>",
+            "🏭 *Allocations:*",
         ]
         allocations = data.get("allocations") or []
         if not isinstance(allocations, list):
@@ -163,152 +135,29 @@ def _telegram_decision_message(action_type, data):
         for allocation in allocations:
             if not isinstance(allocation, dict):
                 raise ValueError("Each allocation must be an object.")
-            item_name = _telegram_escape(allocation.get("item_name"))
-            quantity = _telegram_escape(allocation.get("quantity", 1))
-            manufacturer = _telegram_escape(allocation.get("manufacturer"))
-            lines.append(f"  • <b>{item_name}</b> (Qty: {quantity}) ➔ <b>{manufacturer}</b>")
-        lines.extend(("", "<i>Saved in cloud; local system updates on its next sync.</i>"))
+            item_name = str(allocation.get("item_name") or "")
+            quantity = str(allocation.get("quantity", 1))
+            manufacturer = str(allocation.get("manufacturer") or "")
+            lines.append(f"  *{item_name}* (Qty: {quantity}) ➔ *{manufacturer}*")
+        lines.extend(("", "_Recorded in local system & database._"))
     elif action_type == "NOT_BID":
         lines = [
-            "🚫 <b>TENDER DECISION — NOT BID</b>",
+            "🚫 *TENDER DECISION — NOT BID*",
             "",
-            f"📌 <b>Tender:</b> {tender_no}"
+            f"📌 *Tender:* {tender_no}"
             + (f" - {tender_name}" if tender_name and tender_name != tender_no else ""),
-            "🏢 <b>Status:</b> Rejected / Moved to Not Done",
-            f"👤 <b>Decision By:</b> {approved_by}",
+            "🏢 *Status:* Rejected / Moved to Not Done",
+            f"👤 *Decision By:* {approved_by}",
             "",
-            "<i>Saved in cloud; local system updates on its next sync.</i>",
+            "_Recorded in local system & database._",
         ]
     else:
-        raise ValueError(f"Unsupported Telegram decision type: {action_type!r}")
+        raise ValueError(f"Unsupported decision type: {action_type!r}")
 
     message = "\n".join(lines)
-    if len(message) > 4000:
-        raise ValueError("Decision message exceeds Telegram's safe message length.")
+    if len(message) > 6000:
+        raise ValueError("Decision message is too long to share reliably.")
     return message
-
-
-def _claim_telegram_message():
-    now = time.time()
-    conn = get_db()
-    try:
-        conn.execute("BEGIN IMMEDIATE")
-        row = conn.execute("""
-            SELECT id, action_id, message_html, attempts
-            FROM telegram_outbox
-            WHERE sent_at IS NULL
-              AND retry_after <= ?
-              AND (claimed_until IS NULL OR claimed_until < ?)
-            ORDER BY id ASC
-            LIMIT 1
-        """, (now, now)).fetchone()
-        if row is None:
-            conn.commit()
-            return None
-        conn.execute(
-            "UPDATE telegram_outbox SET claimed_until = ?, attempts = attempts + 1 WHERE id = ?",
-            (now + 30, row["id"]),
-        )
-        conn.commit()
-        return dict(row)
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        conn.close()
-
-
-def flush_telegram_outbox(limit=10):
-    token, chat_id = _telegram_credentials()
-    if not token or not chat_id:
-        return 0
-
-    sent_count = 0
-    for _ in range(limit):
-        row = _claim_telegram_message()
-        if row is None:
-            break
-
-        payload = json.dumps({
-            "chat_id": chat_id,
-            "text": row["message_html"],
-            "parse_mode": "HTML",
-            "disable_web_page_preview": True,
-        }).encode("utf-8")
-        request = urllib.request.Request(
-            f"https://api.telegram.org/bot{token}/sendMessage",
-            data=payload,
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        error = ""
-        try:
-            with urllib.request.urlopen(request, timeout=10) as response:
-                result = json.loads(response.read().decode("utf-8"))
-            if not isinstance(result, dict) or result.get("ok") is not True:
-                error = "Telegram API rejected the message."
-        except urllib.error.HTTPError as exc:
-            error = f"Telegram HTTP error {exc.code}."
-        except (urllib.error.URLError, TimeoutError, OSError) as exc:
-            error = f"Telegram network error: {exc.__class__.__name__}."
-        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-            error = f"Invalid Telegram response: {exc.__class__.__name__}."
-
-        conn = get_db()
-        try:
-            if error:
-                attempts = row["attempts"] + 1
-                retry_after = time.time() + min(15 * (2 ** attempts), 900)
-                conn.execute("""
-                    UPDATE telegram_outbox
-                    SET claimed_until = NULL, retry_after = ?, last_error = ?
-                    WHERE id = ? AND sent_at IS NULL
-                """, (retry_after, error, row["id"]))
-                conn.commit()
-                print(f"[TELEGRAM ERROR] Decision notification {row['action_id']} remains queued: {error}")
-                break
-            conn.execute("""
-                UPDATE telegram_outbox
-                SET sent_at = ?, claimed_until = NULL, last_error = NULL
-                WHERE id = ? AND sent_at IS NULL
-            """, (datetime.now(timezone.utc).isoformat(), row["id"]))
-            conn.commit()
-            sent_count += 1
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            conn.close()
-    return sent_count
-
-
-def _enqueue_telegram_decision(conn, action_id, action_type, data):
-    token, chat_id = _telegram_credentials()
-    if not token or not chat_id:
-        print("[TELEGRAM CONFIG] Decision saved, but TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID is not configured.")
-        return "not_configured"
-
-    message = _telegram_decision_message(action_type, data)
-    conn.execute("""
-        INSERT OR IGNORE INTO telegram_outbox (action_id, chunk_index, message_html)
-        VALUES (?, 0, ?)
-    """, (action_id, message))
-    return "pending"
-
-
-def _deliver_telegram_decision(action_id):
-    flush_telegram_outbox()
-    conn = get_db()
-    try:
-        row = conn.execute(
-            "SELECT sent_at FROM telegram_outbox WHERE action_id = ? AND chunk_index = 0",
-            (action_id,),
-        ).fetchone()
-        if row is None:
-            raise RuntimeError(f"Telegram outbox entry missing for decision {action_id}.")
-        return "sent" if row["sent_at"] else "pending"
-    finally:
-        conn.close()
 
 
 AUTH_GATE_HTML = """<!DOCTYPE html>
@@ -2841,7 +2690,10 @@ def bid_page():
             <h2 style="color: #166534; margin: 0 0 10px 0;">Manufacturer Allocation Saved</h2>
             <p style="color: #475569;">Recorded successfully. When local PC syncs, it updates local files & database.</p>
             <div id="summary-content" style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:15px; text-align:left; margin: 20px auto; max-width:500px;"></div>
-            <div id="telegram-status" style="margin-top:15px; font-size:13px; color:#16a34a; font-weight:600;">Decision saved.</div>
+            <p style="font-size:14px;">Share the prepared confirmation to your WhatsApp group, then return here and confirm that it was sent.</p>
+            <a id="whatsapp-share-btn" href="#" target="_blank" rel="noopener noreferrer" style="display:inline-block; padding:13px 20px; background:#25D366; color:white; text-decoration:none; border-radius:8px; font-weight:700;">Share confirmation to WhatsApp</a>
+            <button id="whatsapp-shared-btn" type="button" onclick="confirmWhatsAppShared()" disabled style="display:block; margin:12px auto 0; padding:11px 18px; border:0; border-radius:8px; background:#166534; color:white; font-weight:700;">I sent it to the group</button>
+            <div id="whatsapp-status" role="status" style="margin-top:12px; font-size:13px; font-weight:600;"></div>
         </div>
 
         <div class="modal" id="add-modal">
@@ -2859,7 +2711,36 @@ def bid_page():
             const TENDER_NO = {json.dumps(tender['tender_no'])};
             const TENDER_NAME = {json.dumps(tender['tender_name'])};
             const AUTHORIZED_ROLE = {json.dumps(authorized_role)};
+            let decisionActionId = null;
             document.getElementById('form-card').style.display = 'block';
+            document.getElementById('whatsapp-share-btn').addEventListener('click', () => {{
+                document.getElementById('whatsapp-shared-btn').disabled = false;
+            }});
+
+            async function confirmWhatsAppShared() {{
+                const button = document.getElementById('whatsapp-shared-btn');
+                const status = document.getElementById('whatsapp-status');
+                if (!decisionActionId) return;
+                button.disabled = true;
+                try {{
+                    const response = await fetch('/api/mark_whatsapp_shared', {{
+                        method: 'POST',
+                        headers: {{'Content-Type': 'application/json'}},
+                        body: JSON.stringify({{id: decisionActionId}})
+                    }});
+                    const result = await response.json();
+                    if (!response.ok || result.status !== 'ok') {{
+                        throw new Error(result.message || 'Could not save WhatsApp share confirmation.');
+                    }}
+                    status.textContent = 'WhatsApp share confirmed. The local scanner will update its database, then Render will remove this response.';
+                    status.style.color = '#15803d';
+                    button.textContent = 'Share confirmed';
+                }} catch (error) {{
+                    status.textContent = error.message;
+                    status.style.color = '#b91c1c';
+                    button.disabled = false;
+                }}
+            }}
 
             function updateAssignmentCount() {{
                 const assigned = document.querySelectorAll('#items-tbody .item-row[data-manufacturer]:not([data-manufacturer=""])').length;
@@ -2967,6 +2848,9 @@ def bid_page():
                 }})
                 .then(d => {{
                     if (d.status !== 'ok') throw new Error(d.message || 'Error saving');
+                    decisionActionId = d.action_id;
+                    document.getElementById('whatsapp-share-btn').href =
+                        'https://api.whatsapp.com/send?text=' + encodeURIComponent(d.whatsapp_text);
                     document.getElementById('form-card').style.display = 'none';
                     let list = '<ul style="margin:6px 0; padding-left:18px;">';
                     allocs.forEach(a => {{ 
@@ -2978,16 +2862,8 @@ def bid_page():
                         <div><b>Approved By:</b> ${{approver}}</div>
                         <div><b>Items Allocated:</b> ${{list}}</div>
                     `;
-                    const telegramStatus = document.getElementById('telegram-status');
-                    if (d.telegram_status === 'sent') {{
-                        telegramStatus.textContent = 'Decision saved and sent to the Telegram group.';
-                    }} else if (d.telegram_status === 'pending') {{
-                        telegramStatus.textContent = 'Decision saved. Telegram delivery is queued for retry.';
-                        telegramStatus.style.color = '#b45309';
-                    }} else {{
-                        telegramStatus.textContent = 'Decision saved, but Telegram is not configured on the server yet.';
-                        telegramStatus.style.color = '#b91c1c';
-                    }}
+                    document.getElementById('whatsapp-status').textContent =
+                        'Select the same group, send the prepared message, then return here and confirm.';
                     document.getElementById('success-card').style.display = 'block';
                 }})
                 .catch(err => {{
@@ -3028,12 +2904,44 @@ def dont_bid():
             <h1 style="color: #dc2626; margin: 0 0 10px 0; font-size: 24px;">🚫 MOVED TO NOT DONE</h1>
             <p style="font-size: 16px;">Tender <b>{tender_no}</b> recorded as NOT BID.</p>
             <p style="color: #64748b; font-size: 14px;">Decision by: <b id="user-display" style="color:#0f172a;">{authorized_role}</b></p>
-            <p id="telegram-status" style="font-size:14px; font-weight:600;"></p>
+            <p style="font-size:14px;">Share this prepared decision to your WhatsApp group, then return and confirm it was sent.</p>
+            <a id="whatsapp-share-btn" href="#" target="_blank" rel="noopener noreferrer" style="display:inline-block; padding:13px 20px; background:#25D366; color:white; text-decoration:none; border-radius:8px; font-weight:700;">Share confirmation to WhatsApp</a>
+            <button id="whatsapp-shared-btn" type="button" onclick="confirmWhatsAppShared()" disabled style="display:block; margin:12px auto 0; padding:11px 18px; border:0; border-radius:8px; background:#166534; color:white; font-weight:700;">I sent it to the group</button>
+            <p id="whatsapp-status" role="status" style="font-size:14px; font-weight:600;"></p>
         </div>
 
         <script>
             const TENDER_NO = {json.dumps(tender_no)};
             const userName = {json.dumps(authorized_role)};
+            let decisionActionId = null;
+            document.getElementById('whatsapp-share-btn').addEventListener('click', () => {{
+                document.getElementById('whatsapp-shared-btn').disabled = false;
+            }});
+
+            async function confirmWhatsAppShared() {{
+                const button = document.getElementById('whatsapp-shared-btn');
+                const status = document.getElementById('whatsapp-status');
+                if (!decisionActionId) return;
+                button.disabled = true;
+                try {{
+                    const response = await fetch('/api/mark_whatsapp_shared', {{
+                        method: 'POST',
+                        headers: {{'Content-Type': 'application/json'}},
+                        body: JSON.stringify({{id: decisionActionId}})
+                    }});
+                    const result = await response.json();
+                    if (!response.ok || result.status !== 'ok') {{
+                        throw new Error(result.message || 'Could not save WhatsApp share confirmation.');
+                    }}
+                    status.textContent = 'WhatsApp share confirmed. The local scanner will update its database, then Render will remove this response.';
+                    status.style.color = '#15803d';
+                    button.textContent = 'Share confirmed';
+                }} catch (error) {{
+                    status.textContent = error.message;
+                    status.style.color = '#b91c1c';
+                    button.disabled = false;
+                }}
+            }}
 
             function recordRejection(userName) {{
                 document.getElementById('reject-card').style.display = 'block';
@@ -3042,24 +2950,18 @@ def dont_bid():
                 fetch('/api/record_dontbid', {{
                     method: 'POST',
                     headers: {{'Content-Type': 'application/json'}},
-                    body: JSON.stringify({{
-                        tender_no: TENDER_NO,
-                        approved_by: userName
-                    }})
+                    body: JSON.stringify({{tender_no: TENDER_NO}})
                 }})
                 .then(async response => {{
                     const result = await response.json();
                     if (!response.ok || result.status !== 'ok') {{
                         throw new Error(result.message || 'Decision could not be saved.');
                     }}
-                    const telegramStatus = document.getElementById('telegram-status');
-                    telegramStatus.textContent = result.telegram_status === 'sent'
-                        ? 'Confirmation sent to the Telegram group.'
-                        : result.telegram_status === 'pending'
-                            ? 'Confirmation saved and queued for Telegram retry.'
-                            : 'Decision saved, but Telegram is not configured on the server yet.';
-                    telegramStatus.style.color = result.telegram_status === 'sent' ? '#15803d'
-                        : result.telegram_status === 'pending' ? '#b45309' : '#b91c1c';
+                    decisionActionId = result.action_id;
+                    document.getElementById('whatsapp-share-btn').href =
+                        'https://api.whatsapp.com/send?text=' + encodeURIComponent(result.whatsapp_text);
+                    document.getElementById('whatsapp-status').textContent =
+                        'Select the same group, send the prepared message, then return here and confirm.';
                 }})
                 .catch(error => {{
                     document.getElementById('reject-card').innerHTML =
@@ -3121,8 +3023,10 @@ def record_dontbid_api():
                 "tender_no": tender_no,
                 "action": "NOT_BID",
                 "approved_by": user_name,
+                "requires_whatsapp_share": True,
+                "whatsapp_shared": False,
             }
-            _telegram_decision_message("NOT_BID", decision_data)
+            whatsapp_text = _whatsapp_decision_message("NOT_BID", decision_data)
             conn = get_db()
             try:
                 cur = conn.cursor()
@@ -3131,18 +3035,17 @@ def record_dontbid_api():
                 VALUES ('NOT_BID', ?, ?, 0)
                 """, (tender_no, json.dumps(decision_data)))
                 action_id = cur.lastrowid
-                telegram_status = _enqueue_telegram_decision(
-                    conn, action_id, "NOT_BID", decision_data
-                )
                 conn.commit()
             except Exception:
                 conn.rollback()
                 raise
             finally:
                 conn.close()
-            if telegram_status == "pending":
-                telegram_status = _deliver_telegram_decision(action_id)
-            return jsonify({"status": "ok", "telegram_status": telegram_status})
+            return jsonify({
+                "status": "ok",
+                "action_id": action_id,
+                "whatsapp_text": whatsapp_text,
+            })
         except Exception as e:
             return jsonify({"status": "error", "message": str(e)}), 500
     return jsonify({"status": "error"}), 400
@@ -3169,8 +3072,10 @@ def submit_allocation():
     data = request.get_json() or {}
     tender_no = (data.get("tender_no") or "").strip().upper()
     data["approved_by"] = _current_member()
+    data["requires_whatsapp_share"] = True
+    data["whatsapp_shared"] = False
     try:
-        _telegram_decision_message("BID_ALLOCATION", data)
+        whatsapp_text = _whatsapp_decision_message("BID_ALLOCATION", data)
         conn = get_db()
         try:
             cur = conn.cursor()
@@ -3179,28 +3084,23 @@ def submit_allocation():
             VALUES ('BID_ALLOCATION', ?, ?, 0)
             """, (tender_no, json.dumps(data)))
             action_id = cur.lastrowid
-            telegram_status = _enqueue_telegram_decision(
-                conn, action_id, "BID_ALLOCATION", data
-            )
             conn.commit()
         except Exception:
             conn.rollback()
             raise
         finally:
             conn.close()
-        if telegram_status == "pending":
-            telegram_status = _deliver_telegram_decision(action_id)
         return jsonify({
             "status": "ok",
             "message": "Saved to cloud pending sync",
-            "telegram_status": telegram_status,
+            "action_id": action_id,
+            "whatsapp_text": whatsapp_text,
         })
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.route("/api/pending_actions")
 def get_pending():
-    flush_telegram_outbox()
     conn = get_db()
     cur = conn.cursor()
     cur.execute("SELECT id, action_type, tender_no, data_json, created_at FROM pending_sync WHERE synced = 0 ORDER BY id ASC")
@@ -3221,17 +3121,78 @@ def get_pending():
 def mark_synced():
     data = request.get_json() or {}
     sync_id = data.get("id")
-    if sync_id:
+    if isinstance(sync_id, bool) or not isinstance(sync_id, int) or sync_id <= 0:
+        return jsonify({"status": "error", "message": "A valid action id is required."}), 400
+    try:
+        conn = get_db()
         try:
-            conn = get_db()
-            cur = conn.cursor()
-            cur.execute("DELETE FROM pending_sync WHERE id = ?", (sync_id,))
+            row = conn.execute(
+                "SELECT data_json FROM pending_sync WHERE id = ?",
+                (sync_id,),
+            ).fetchone()
+            if row is None:
+                conn.commit()
+                return jsonify({"status": "ok", "message": "Action was already removed."})
+            action_data = json.loads(row["data_json"])
+            requires_share = action_data.get("requires_whatsapp_share") is True
+            shared = action_data.get("whatsapp_shared") is True
+            if requires_share and not shared:
+                conn.execute("UPDATE pending_sync SET synced = 1 WHERE id = ?", (sync_id,))
+                message = "Local sync recorded; waiting for WhatsApp share confirmation."
+            else:
+                conn.execute("DELETE FROM pending_sync WHERE id = ?", (sync_id,))
+                message = "Local sync recorded and action removed."
             conn.commit()
+            return jsonify({"status": "ok", "message": message})
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
             conn.close()
-            return jsonify({"status": "ok", "message": f"Action {sync_id} permanently deleted. Zero storage used."})
-        except Exception as e:
-            return jsonify({"status": "error", "message": str(e)}), 500
-    return jsonify({"status": "error"}), 400
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route("/api/mark_whatsapp_shared", methods=["POST"])
+@require_member
+def mark_whatsapp_shared():
+    data = request.get_json(silent=True) or {}
+    action_id = data.get("id")
+    if isinstance(action_id, bool) or not isinstance(action_id, int) or action_id <= 0:
+        return jsonify({"status": "error", "message": "A valid action id is required."}), 400
+
+    try:
+        conn = get_db()
+        try:
+            row = conn.execute(
+                "SELECT data_json, synced FROM pending_sync WHERE id = ?",
+                (action_id,),
+            ).fetchone()
+            if row is None:
+                return jsonify({"status": "error", "message": "This response has already been removed."}), 404
+
+            action_data = json.loads(row["data_json"])
+            if action_data.get("requires_whatsapp_share") is not True:
+                return jsonify({"status": "error", "message": "This response does not require WhatsApp share confirmation."}), 409
+            action_data["whatsapp_shared"] = True
+            conn.execute(
+                "UPDATE pending_sync SET data_json = ? WHERE id = ?",
+                (json.dumps(action_data), action_id),
+            )
+            if row["synced"]:
+                conn.execute("DELETE FROM pending_sync WHERE id = ?", (action_id,))
+                message = "Share confirmed; local sync was already complete, so the response was removed."
+            else:
+                message = "Share confirmed; the response will be removed after the local scanner syncs it."
+            conn.commit()
+            return jsonify({"status": "ok", "message": message})
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
