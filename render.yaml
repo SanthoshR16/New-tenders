@@ -13,3 +13,5 @@ services:
         sync: false
       - key: UDAY_SIR_ACCESS_CODE
         sync: false
+      - key: RELAY_API_TOKEN
+        sync: false

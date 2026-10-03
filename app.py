@@ -72,9 +72,15 @@ def init_db():
         tender_no TEXT,
         data_json TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        synced INTEGER DEFAULT 0
+        synced INTEGER DEFAULT 0,
+        relay_delivered INTEGER NOT NULL DEFAULT 0
     )
     """)
+    columns = {row["name"] for row in cur.execute("PRAGMA table_info(pending_sync)")}
+    if "relay_delivered" not in columns:
+        cur.execute(
+            "ALTER TABLE pending_sync ADD COLUMN relay_delivered INTEGER NOT NULL DEFAULT 0"
+        )
     for m in INITIAL_MANUFACTURERS:
         cur.execute("INSERT OR IGNORE INTO manufacturers (name) VALUES (?)", (m,))
     for a in INITIAL_APPROVERS:
@@ -3233,6 +3239,101 @@ def get_pending():
         })
     conn.close()
     return jsonify(actions)
+
+
+def _relay_token_is_valid():
+    expected_token = os.environ.get("RELAY_API_TOKEN", "").strip()
+    if not expected_token:
+        return False, 503
+    authorization = request.headers.get("Authorization", "")
+    scheme, separator, supplied_token = authorization.partition(" ")
+    if (
+        not separator
+        or scheme.casefold() != "bearer"
+        or not supplied_token
+        or not hmac.compare_digest(supplied_token, expected_token)
+    ):
+        return False, 401
+    return True, 200
+
+
+def _relay_auth_error(status_code):
+    if status_code == 503:
+        return jsonify({
+            "status": "error",
+            "message": "Relay API authentication is not configured.",
+        }), status_code
+    return jsonify({"status": "error", "message": "Unauthorized."}), status_code
+
+
+@app.route("/api/relay/pending", methods=["GET"])
+def get_relay_pending():
+    authorized, status_code = _relay_token_is_valid()
+    if not authorized:
+        return _relay_auth_error(status_code)
+
+    conn = get_db()
+    try:
+        rows = conn.execute("""
+            SELECT id, action_type, tender_no, data_json, created_at
+            FROM pending_sync
+            WHERE relay_delivered = 0
+              AND action_type IN ('BID_ALLOCATION', 'NOT_BID')
+            ORDER BY id ASC
+        """).fetchall()
+        actions = []
+        for row in rows:
+            action_data = json.loads(row["data_json"])
+            actions.append({
+                "id": row["id"],
+                "action_type": row["action_type"],
+                "tender_no": row["tender_no"],
+                "approved_by": action_data.get("approved_by"),
+                "created_at": row["created_at"],
+                "data": action_data,
+            })
+        return jsonify(actions)
+    finally:
+        conn.close()
+
+
+@app.route("/api/relay/mark-delivered", methods=["POST"])
+def mark_relay_delivered():
+    authorized, status_code = _relay_token_is_valid()
+    if not authorized:
+        return _relay_auth_error(status_code)
+
+    data = request.get_json(silent=True)
+    action_id = data.get("id") if isinstance(data, dict) else None
+    if isinstance(action_id, bool) or not isinstance(action_id, int) or action_id <= 0:
+        return jsonify({
+            "status": "error",
+            "message": "A valid action id is required.",
+        }), 400
+
+    conn = get_db()
+    try:
+        row = conn.execute(
+            "SELECT action_type FROM pending_sync WHERE id = ?",
+            (action_id,),
+        ).fetchone()
+        if row is None or row["action_type"] not in {"BID_ALLOCATION", "NOT_BID"}:
+            return jsonify({
+                "status": "error",
+                "message": "Decision not found.",
+            }), 404
+        conn.execute(
+            "UPDATE pending_sync SET relay_delivered = 1 WHERE id = ?",
+            (action_id,),
+        )
+        conn.commit()
+        return jsonify({"status": "ok", "id": action_id, "relay_delivered": True})
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
 
 @app.route("/api/mark_synced", methods=["POST"])
 def mark_synced():
