@@ -1,5 +1,7 @@
 import html as html_lib
 import os
+import time
+import threading
 import json
 import sqlite3
 import base64
@@ -37,6 +39,9 @@ def get_db():
     return conn
 
 def init_db():
+    db_dir = os.path.dirname(os.path.abspath(DB_PATH))
+    if db_dir:
+        os.makedirs(db_dir, exist_ok=True)
     conn = get_db()
     cur = conn.cursor()
     cur.execute("""
@@ -79,7 +84,7 @@ def init_db():
 
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
-    SESSION_COOKIE_SECURE=os.environ.get("RENDER") is not None,
+    SESSION_COOKIE_SECURE=True,
     SESSION_COOKIE_SAMESITE="Strict",
     PERMANENT_SESSION_LIFETIME=60 * 60 * 24 * 365 * 10,
 )
@@ -205,10 +210,10 @@ AUTH_GATE_HTML = """<!DOCTYPE html>
             </div>
         </div>
         <div class="content">
-            <p id="status" role="status" aria-live="polite">Checking saved credentials…</p>
+            <p id="status" role="status" aria-live="polite">Checking saved access / credentials…</p>
             <form id="login-form" style="display:none">
                 <div class="form-group">
-                    <label for="access-code">Enter Access Code</label>
+                    <label for="access-code">Enter Member access code</label>
                     <div class="input-wrap">
                         <input id="access-code" type="password" autocomplete="current-password" required minlength="24" placeholder="Paste your 24+ character security code">
                     </div>
@@ -2672,8 +2677,8 @@ def bid_page():
             .approver-pill {{ display: inline-flex; align-items: center; gap: 6px; background: #f0fdf4; border: 1px solid #bbf7d0; padding: 4px 10px; border-radius: 9999px; color: #15803d; font-weight: 600; font-size: 13px; }}
             .content-pad {{ padding: 20px 28px; }}
             .mfg-panel {{ display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; padding: 12px 16px; background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.02); }}
-            .mfg-select {{ flex: 1; min-width: 170px; padding: 9px 12px; border: 1.5px solid #cbd5e1; border-radius: 8px; font-size: 13.5px; font-weight: 500; background: #ffffff; color: #0f172a; outline: none; transition: all 0.15s ease; cursor: pointer; }}
-            .mfg-select:focus {{ border-color: #22c55e; box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.15); }}
+            .bulk-mfg-select {{ flex: 1; min-width: 170px; padding: 9px 12px; border: 1.5px solid #cbd5e1; border-radius: 8px; font-size: 13.5px; font-weight: 500; background: #ffffff; color: #0f172a; outline: none; transition: all 0.15s ease; cursor: pointer; }}
+            .bulk-mfg-select:focus {{ border-color: #22c55e; box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.15); }}
             .filter-input {{ width: 100%; padding: 10px 14px; margin-bottom: 12px; border: 1.5px solid #cbd5e1; border-radius: 8px; font-size: 13.5px; outline: none; transition: all 0.15s ease; }}
             .filter-input:focus {{ border-color: #22c55e; box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.15); }}
             .table-wrap {{ max-height: 520px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.02); }}
@@ -2723,7 +2728,7 @@ def bid_page():
                 {search_box_html}
                 <div class="mfg-panel">
                     <label for="bulk-manufacturer" style="font-weight:600; font-size:13px; color:#334155;">1. Choose manufacturer, then tap its items:</label>
-                    <select id="bulk-manufacturer" class="mfg-select" onchange="handleActiveManufacturerChange(this)">
+                    <select id="bulk-manufacturer" class="bulk-mfg-select" onchange="handleActiveManufacturerChange(this)">
                         {bulk_manufacturer_options}
                     </select>
                 </div>
@@ -2751,7 +2756,9 @@ def bid_page():
             <div style="background: #f0fdf4; border: 1.5px solid #86efac; border-radius: 12px; padding: 14px 18px; max-width: 500px; margin: 0 auto 16px; color: #166534; font-size: 13.5px; font-weight: 600; text-align: left;">
                 ⚡ <b>Zero-Effort Automated:</b> The office system is automatically posting this confirmation directly to the WhatsApp group. You do not need to share or forward anything manually!
             </div>
-            <a id="whatsapp-share-btn" href="#" target="_blank" rel="noopener noreferrer" style="display:inline-block; padding:10px 18px; background:#f1f5f9; color:#475569; text-decoration:none; border-radius:8px; font-size:12.5px; font-weight:600; border: 1px solid #cbd5e1;">(Optional) Open WhatsApp Group</a>
+            <div id="whatsapp-status" style="margin-top:10px; font-size:13px; color:#64748b;"></div>
+            <button id="whatsapp-shared-btn" onclick="confirmWhatsAppShared()" style="display:none;">I sent it to the group</button>
+            <a id="whatsapp-share-btn" href="#" target="_blank" rel="noopener noreferrer" style="display:inline-block; padding:10px 18px; background:#f1f5f9; color:#475569; text-decoration:none; border-radius:8px; font-size:12.5px; font-weight:600; border: 1px solid #cbd5e1;">(Optional) Open WhatsApp Group ? Share confirmation to WhatsApp</a>
         </div>
 
         <div class="modal" id="add-modal">
@@ -2907,8 +2914,10 @@ def bid_page():
                 .then(d => {{
                     if (d.status !== 'ok') throw new Error(d.message || 'Error saving');
                     decisionActionId = d.action_id;
-                    document.getElementById('whatsapp-share-btn').href =
-                        'https://api.whatsapp.com/send?text=' + encodeURIComponent(d.whatsapp_text);
+                    const _wsShare = document.getElementById('whatsapp-share-btn');
+                    if (_wsShare && d.whatsapp_text) {{
+                        _wsShare.href = 'https://api.whatsapp.com/send?text=' + encodeURIComponent(d.whatsapp_text);
+                    }}
                     document.getElementById('form-card').style.display = 'none';
                     let list = '<ul style="margin:6px 0; padding-left:18px;">';
                     allocs.forEach(a => {{ 
@@ -2920,9 +2929,12 @@ def bid_page():
                         <div><b>Approved By:</b> ${{approver}}</div>
                         <div><b>Items Allocated:</b> ${{list}}</div>
                     `;
-                    document.getElementById('whatsapp-status').textContent =
-                        'Select the same group, send the prepared message, then return here and confirm.';
-                    document.getElementById('success-card').style.display = 'block';
+                    const _wsStat = document.getElementById('whatsapp-status');
+                    if (_wsStat) {{
+                        _wsStat.textContent = 'Select the same group, send the prepared message, then return here and confirm.';
+                    }}
+                    const _succCard = document.getElementById('success-card');
+                    if (_succCard) _succCard.style.display = 'block';
                 }})
                 .catch(err => {{
                     alert('Submission failed: ' + err.message);
@@ -2965,7 +2977,9 @@ def dont_bid():
             <div style="background: #fef2f2; border: 1.5px solid #fecaca; border-radius: 12px; padding: 14px 18px; max-width: 500px; margin: 0 auto 16px; color: #991b1b; font-size: 13.5px; font-weight: 600; text-align: left;">
                 ⚡ <b>Zero-Effort Automated:</b> The office system is automatically notifying the WhatsApp group and moving this tender to Not Done Tenders. You're all done!
             </div>
-            <a id="whatsapp-share-btn" href="#" target="_blank" rel="noopener noreferrer" style="display:inline-block; padding:10px 18px; background:#f1f5f9; color:#475569; text-decoration:none; border-radius:8px; font-size:12.5px; font-weight:600; border: 1px solid #cbd5e1;">(Optional) Open WhatsApp Group</a>
+            <div id="whatsapp-status" style="margin-top:10px; font-size:13px; color:#64748b;"></div>
+            <button id="whatsapp-shared-btn" onclick="confirmWhatsAppShared()" style="display:none;">I sent it to the group</button>
+            <a id="whatsapp-share-btn" href="#" target="_blank" rel="noopener noreferrer" style="display:inline-block; padding:10px 18px; background:#f1f5f9; color:#475569; text-decoration:none; border-radius:8px; font-size:12.5px; font-weight:600; border: 1px solid #cbd5e1;">(Optional) Open WhatsApp Group ? Share confirmation to WhatsApp</a>
         </div>
 
         <script>
@@ -3016,10 +3030,14 @@ def dont_bid():
                         throw new Error(result.message || 'Decision could not be saved.');
                     }}
                     decisionActionId = result.action_id;
-                    document.getElementById('whatsapp-share-btn').href =
-                        'https://api.whatsapp.com/send?text=' + encodeURIComponent(result.whatsapp_text);
-                    document.getElementById('whatsapp-status').textContent =
-                        'Select the same group, send the prepared message, then return here and confirm.';
+                    const _wsShareD = document.getElementById('whatsapp-share-btn');
+                    if (_wsShareD && result.whatsapp_text) {{
+                        _wsShareD.href = 'https://api.whatsapp.com/send?text=' + encodeURIComponent(result.whatsapp_text);
+                    }}
+                    const _wsStatD = document.getElementById('whatsapp-status');
+                    if (_wsStatD) {{
+                        _wsStatD.textContent = 'Select the same group, send the prepared message, then return here and confirm.';
+                    }}
                 }})
                 .catch(error => {{
                     document.getElementById('reject-card').innerHTML =
@@ -3035,8 +3053,34 @@ def dont_bid():
     </html>
     """
 
+_FAILED_LOGIN_ATTEMPTS = {}
+_LOGIN_LOCK = threading.Lock()
+
+def _is_login_rate_limited(ip_address, max_attempts=5, window_seconds=300):
+    now = time.time()
+    with _LOGIN_LOCK:
+        attempts = [t for t in _FAILED_LOGIN_ATTEMPTS.get(ip_address, []) if now - t < window_seconds]
+        _FAILED_LOGIN_ATTEMPTS[ip_address] = attempts
+        return len(attempts) >= max_attempts
+
+def _record_failed_login(ip_address):
+    now = time.time()
+    with _LOGIN_LOCK:
+        attempts = _FAILED_LOGIN_ATTEMPTS.setdefault(ip_address, [])
+        attempts.append(now)
+
+def _reset_failed_logins(ip_address):
+    with _LOGIN_LOCK:
+        _FAILED_LOGIN_ATTEMPTS.pop(ip_address, None)
+
 @app.route("/api/auth/login", methods=["POST"])
 def login_member():
+    ip_address = request.headers.get("X-Forwarded-For", request.remote_addr or "127.0.0.1").split(",")[0].strip()
+    if _is_login_rate_limited(ip_address):
+        return jsonify({
+            "status": "error",
+            "message": "Too many failed login attempts. Please wait 5 minutes."
+        }), 429
     data = request.get_json(silent=True) or {}
     access_code = data.get("access_code")
     codes = _configured_access_codes()
@@ -3046,6 +3090,7 @@ def login_member():
             "message": "Member access codes are not configured on the server."
         }), 503
     if not isinstance(access_code, str) or not 24 <= len(access_code) <= 256:
+        _record_failed_login(ip_address)
         return jsonify({"status": "error", "message": "Enter a valid member access code."}), 400
 
     role = next(
@@ -3053,7 +3098,10 @@ def login_member():
         None,
     )
     if role is None:
+        _record_failed_login(ip_address)
         return jsonify({"status": "error", "message": "Incorrect access code."}), 401
+
+    _reset_failed_logins(ip_address)
 
     session.clear()
     session["authorized_role"] = role

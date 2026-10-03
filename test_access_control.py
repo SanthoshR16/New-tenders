@@ -145,6 +145,16 @@ class MemberAccessControlTests(unittest.TestCase):
         conn.close()
         self.assertEqual(payload["approved_by"], "Kamal Sir")
 
+    def test_login_rate_limiting(self):
+        tender_app._reset_failed_logins("127.0.0.1")
+        for _ in range(5):
+            res = self.client.post("/api/auth/login", json={"access_code": "wrong-access-code-" + ("z" * 24)})
+            self.assertEqual(res.status_code, 401)
+        blocked = self.client.post("/api/auth/login", json={"access_code": "wrong-access-code-" + ("z" * 24)})
+        self.assertEqual(blocked.status_code, 429)
+        self.assertIn("Too many failed login attempts", blocked.get_json()["message"])
+        tender_app._reset_failed_logins("127.0.0.1")
+
     def test_missing_codes_fail_closed_with_configuration_error(self):
         previous = {
             env_name: os.environ.pop(env_name, None)
