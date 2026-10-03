@@ -90,10 +90,10 @@ class WhatsAppDecisionSharingTests(unittest.TestCase):
         self.assertEqual(row["synced"], 0)
 
         page = self.client.get("/bid?tender=IND2712")
-        self.assertIn(b"Open WhatsApp confirmation", page.data)
-        self.assertIn(b"I sent it to the group", page.data)
-        self.assertIn(b"api.whatsapp.com/send?text=", page.data)
-        self.assertIn(b"WhatsApp has not been opened", page.data)
+        self.assertIn(b"I sent it in the group", page.data)
+        self.assertIn(b"After sending the decision in WhatsApp, confirm it here.", page.data)
+        self.assertNotIn(b"api.whatsapp.com/send", page.data)
+        self.assertNotIn(b"Open WhatsApp", page.data)
         self.assertNotIn(b"window.open(", page.data)
 
     def test_rejection_returns_prefilled_whatsapp_confirmation(self):
@@ -107,8 +107,10 @@ class WhatsAppDecisionSharingTests(unittest.TestCase):
         self.assertIn("IND2495/CALL-3", result["whatsapp_text"])
         self.assertIn("Developer", result["whatsapp_text"])
         page = self.client.get("/dontbid?tender=IND2495/CALL-3")
-        self.assertIn(b"I sent it to the group", page.data)
-        self.assertIn(b"shareButton.href = 'https://api.whatsapp.com/send?text='", page.data)
+        self.assertIn(b"I sent it in the group", page.data)
+        self.assertIn(b"After sending the decision in WhatsApp, confirm it here.", page.data)
+        self.assertNotIn(b"api.whatsapp.com/send", page.data)
+        self.assertNotIn(b"Open WhatsApp", page.data)
         self.assertNotIn(b"window.location.assign(", page.data)
         self.assertIn(b"sessionStorage.setItem(decisionStorageKey", page.data)
 
@@ -137,7 +139,7 @@ class WhatsAppDecisionSharingTests(unittest.TestCase):
             "/api/mark_synced",
             json={"id": second_id},
         )
-        self.assertIn("waiting for WhatsApp share", synced_first.get_json()["message"])
+        self.assertIn("waiting for WhatsApp send", synced_first.get_json()["message"])
         self.assertEqual(self._pending_row(second_id)["synced"], 1)
 
         shared_last = self.client.post(
