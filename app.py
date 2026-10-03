@@ -2754,7 +2754,7 @@ def bid_page():
             <p style="color: #64748b; font-size: 14px; margin-bottom: 18px;">Recorded successfully in database.</p>
             <div id="summary-content" style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:16px 20px; text-align:left; margin: 0 auto 20px; max-width:500px; font-size: 14px; line-height: 1.6;"></div>
             <div style="background: #f0fdf4; border: 1.5px solid #86efac; border-radius: 12px; padding: 14px 18px; max-width: 500px; margin: 0 auto 16px; color: #166534; font-size: 13.5px; font-weight: 600; text-align: left;">
-                WhatsApp is opening with the confirmation prefilled. Choose the tender group and tap Send, then return here to confirm it was shared.
+                The decision is recorded. WhatsApp will open only if you tap the confirmation button below.
             </div>
             <div id="whatsapp-status" style="margin-top:10px; font-size:13px; color:#64748b;"></div>
             <button id="whatsapp-shared-btn" onclick="confirmWhatsAppShared()" disabled style="display:none; margin:0 auto; padding:12px 18px; border:0; border-radius:8px; background:#166534; color:white; font-weight:700;">I sent it to the group</button>
@@ -2903,8 +2903,6 @@ def bid_page():
                 const subBtn = document.getElementById('sub-btn');
                 subBtn.disabled = true;
                 subBtn.innerText = 'SAVING ALLOCATION...';
-                const whatsappWindow = window.open('about:blank', '_blank');
-
                 fetch('/api/submit_allocation', {{
                     method: 'POST',
                     headers: {{'Content-Type': 'application/json'}},
@@ -2934,14 +2932,8 @@ def bid_page():
                         whatsapp_shared: false
                     }}));
                     const sharedButton = document.getElementById('whatsapp-shared-btn');
-                    sharedButton.disabled = false;
-                    sharedButton.style.display = 'block';
-                    if (whatsappWindow) {{
-                        whatsappWindow.location.href = whatsappUrl;
-                    }} else {{
-                        document.getElementById('whatsapp-status').textContent =
-                            'Your browser blocked the WhatsApp tab. Tap Open WhatsApp confirmation, choose the tender group, then tap Send.';
-                    }}
+                    sharedButton.disabled = true;
+                    sharedButton.style.display = 'none';
                     document.getElementById('form-card').style.display = 'none';
                     let list = '<ul style="margin:6px 0; padding-left:18px;">';
                     allocs.forEach(a => {{ 
@@ -2955,15 +2947,12 @@ def bid_page():
                     `;
                     const _wsStat = document.getElementById('whatsapp-status');
                     if (_wsStat) {{
-                        _wsStat.textContent = whatsappWindow
-                            ? 'WhatsApp opened with the message prefilled. Choose the tender group, tap Send, then return here and confirm.'
-                            : 'Choose the tender group in WhatsApp and tap Send. Return here and confirm that it was shared.';
+                        _wsStat.textContent = 'Decision recorded. WhatsApp has not been opened. Tap Open WhatsApp confirmation only if you want to share it.';
                     }}
                     const _succCard = document.getElementById('success-card');
                     if (_succCard) _succCard.style.display = 'block';
                 }})
                 .catch(err => {{
-                    if (whatsappWindow) whatsappWindow.close();
                     alert('Submission failed: ' + err.message);
                     subBtn.disabled = false;
                     subBtn.innerText = 'SUBMIT MANUFACTURER ALLOCATION';
@@ -3002,7 +2991,7 @@ def dont_bid():
             <p style="font-size: 16px;">Tender <b>{tender_no}</b> recorded as NOT BID.</p>
             <p style="color: #64748b; font-size: 14px; margin-bottom: 20px;">Decision by: <b id="user-display" style="color:#0f172a;">{authorized_role}</b></p>
             <div style="background: #fef2f2; border: 1.5px solid #fecaca; border-radius: 12px; padding: 14px 18px; max-width: 500px; margin: 0 auto 16px; color: #991b1b; font-size: 13.5px; font-weight: 600; text-align: left;">
-                WhatsApp is opening with the decision prefilled. Choose the tender group and tap Send, then return here to confirm it was shared.
+                The decision is recorded. WhatsApp will open only if you tap the confirmation button below.
             </div>
             <div id="whatsapp-status" style="margin-top:10px; font-size:13px; color:#64748b;"></div>
             <button id="whatsapp-shared-btn" onclick="confirmWhatsAppShared()" disabled style="display:none; margin:0 auto; padding:12px 18px; border:0; border-radius:8px; background:#166534; color:white; font-weight:700;">I sent it to the group</button>
@@ -3034,9 +3023,9 @@ def dont_bid():
                     status.textContent = 'WhatsApp share already confirmed.';
                     status.style.color = '#15803d';
                 }} else {{
-                    sharedButton.disabled = false;
-                    sharedButton.style.display = 'block';
-                    status.textContent = 'Choose the tender group in WhatsApp, tap Send, then confirm below.';
+                    sharedButton.disabled = true;
+                    sharedButton.style.display = 'none';
+                    status.textContent = 'Tap Open WhatsApp confirmation to choose the tender group and send, then confirm below.';
                 }}
                 document.getElementById('reject-card').style.display = 'block';
             }}
@@ -3101,9 +3090,6 @@ def dont_bid():
                     }};
                     sessionStorage.setItem(decisionStorageKey, JSON.stringify(savedDecision));
                     showDecisionForSharing(savedDecision);
-                    window.location.assign(
-                        'https://api.whatsapp.com/send?text=' + encodeURIComponent(result.whatsapp_text)
-                    );
                 }})
                 .catch(error => {{
                     document.getElementById('reject-card').innerHTML =

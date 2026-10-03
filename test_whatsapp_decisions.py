@@ -93,8 +93,8 @@ class WhatsAppDecisionSharingTests(unittest.TestCase):
         self.assertIn(b"Open WhatsApp confirmation", page.data)
         self.assertIn(b"I sent it to the group", page.data)
         self.assertIn(b"api.whatsapp.com/send?text=", page.data)
-        self.assertIn(b"window.open('about:blank', '_blank')", page.data)
-        self.assertIn(b"whatsappWindow.location.href = whatsappUrl", page.data)
+        self.assertIn(b"WhatsApp has not been opened", page.data)
+        self.assertNotIn(b"window.open(", page.data)
 
     def test_rejection_returns_prefilled_whatsapp_confirmation(self):
         response = self.client.post(
@@ -108,7 +108,8 @@ class WhatsAppDecisionSharingTests(unittest.TestCase):
         self.assertIn("Developer", result["whatsapp_text"])
         page = self.client.get("/dontbid?tender=IND2495/CALL-3")
         self.assertIn(b"I sent it to the group", page.data)
-        self.assertIn(b"window.location.assign(", page.data)
+        self.assertIn(b"shareButton.href = 'https://api.whatsapp.com/send?text='", page.data)
+        self.assertNotIn(b"window.location.assign(", page.data)
         self.assertIn(b"sessionStorage.setItem(decisionStorageKey", page.data)
 
     def test_action_is_deleted_after_share_and_local_sync_in_either_order(self):
