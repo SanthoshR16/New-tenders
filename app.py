@@ -11,7 +11,7 @@ import hmac
 import secrets
 from functools import wraps
 from datetime import datetime
-from flask import Flask, request, jsonify, render_template_string, session
+from flask import Flask, request, jsonify, render_template_string, session, redirect
 
 app = Flask(__name__)
 
@@ -2871,7 +2871,7 @@ def bid_page():
                 }})
                 .then(d => {{
                     if (d.status !== 'ok') throw new Error(d.message || 'Error saving');
-                    const sendingUrl = '/decision-sending/' + d.action_id;
+                    const sendingUrl = 'https://api.whatsapp.com/send?text=' + encodeURIComponent(d.whatsapp_text);
                     if (sendingWindow) {{
                         sendingWindow.location.href = sendingUrl;
                         document.getElementById('form-card').innerHTML =
@@ -2952,7 +2952,7 @@ def dont_bid():
                         throw new Error(result.message || 'Decision could not be saved.');
                     }}
                     sessionStorage.setItem(decisionStorageKey, JSON.stringify({{action_id: result.action_id}}));
-                    const sendingUrl = '/decision-sending/' + result.action_id;
+                    const sendingUrl = 'https://api.whatsapp.com/send?text=' + encodeURIComponent(result.whatsapp_text);
                     if (sendingWindow) {{
                         sendingWindow.location.href = sendingUrl;
                         document.querySelector('main').innerHTML =
@@ -2997,71 +2997,8 @@ def decision_sending_page(action_id):
         action_data = json.loads(row["data_json"])
         whatsapp_text = _whatsapp_decision_message(row["action_type"], action_data)
         whatsapp_url = "https://api.whatsapp.com/send?text=" + urllib.parse.quote(whatsapp_text)
-        html = render_template_string(
-            """<!doctype html>
-            <html lang="en">
-            <head>
-                <title>Send Tender Decision</title>
-                <meta name="viewport" content="width=device-width, initial-scale=1">
-                <style>
-                    body { font-family:Segoe UI,sans-serif; background:#f8fafc; color:#0f172a; padding:20px; text-align:center; }
-                    main { max-width:480px; margin:32px auto; background:#fff; padding:28px; border-radius:12px; box-shadow:0 4px 20px rgba(0,0,0,.08); }
-                    pre { white-space:pre-wrap; text-align:left; background:#f1f5f9; padding:14px; border-radius:8px; }
-                    button, .send-link { display:inline-block; margin:8px; padding:12px 18px; border:0; border-radius:8px; font-weight:700; text-decoration:none; cursor:pointer; }
-                    .send-link { background:#25D366; color:#fff; }
-                    button { background:#166534; color:#fff; }
-                </style>
-            </head>
-            <body>
-                <main>
-                    <h1>Send this decision to the WhatsApp group</h1>
-                    <p>Tender {{ tender_no }} is recorded. Choose the correct decision group in WhatsApp and send this prepared message.</p>
-                    <pre id="decision-text">{{ message }}</pre>
-                    <button id="copy-button" type="button" style="background:#0284c7; color:#fff;" onclick="navigator.clipboard.writeText(document.getElementById('decision-text').innerText); this.textContent='Copied!';">Copy Message</button>
-                    <a class="send-link" href="{{ whatsapp_url }}" target="_blank" rel="noopener noreferrer">Continue to WhatsApp</a>
-                    <p>After sending, return here and confirm. The local scanner must also sync this decision before Render deletes it.</p>
-                    <button id="sent-button" type="button">Sent to the group</button>
-                    <p id="status" role="status"></p>
-                </main>
-                <script>
-                    const actionId = {{ action_id|tojson }};
-                    const button = document.getElementById('sent-button');
-                    const status = document.getElementById('status');
-                    button.addEventListener('click', async () => {
-                        button.disabled = true;
-                        try {
-                            const response = await fetch('/api/mark_whatsapp_shared', {
-                                method: 'POST',
-                                headers: {'Content-Type': 'application/json'},
-                                body: JSON.stringify({id: actionId})
-                            });
-                            const result = await response.json();
-                            if (!response.ok || result.status !== 'ok') {
-                                throw new Error(result.message || 'Could not confirm the WhatsApp send.');
-                            }
-                            status.textContent = result.message;
-                            status.style.color = '#15803d';
-                            window.close();
-                            window.setTimeout(() => {
-                                status.textContent = 'Confirmation saved. You can close this page.';
-                            }, 250);
-                        } catch (error) {
-                            status.textContent = error.message;
-                            status.style.color = '#b91c1c';
-                            button.disabled = false;
-                        }
-                    });
-                </script>
-            </body>
-            </html>""",
-            tender_no=row["tender_no"],
-            message=whatsapp_text,
-            whatsapp_url=whatsapp_url,
-            action_id=action_id,
-        )
-        response = app.make_response(html)
-        response.headers["Cache-Control"] = "no-store"
-        return response
+        return redirect(whatsapp_url, code=302)
+
     except Exception as e:
         return f"Could not load the decision sending page: {e}", 500
 
@@ -3141,7 +3078,7 @@ def record_dontbid_api():
                 "tender_no": tender_no,
                 "action": "NOT_BID",
                 "approved_by": user_name,
-                "requires_whatsapp_share": True,
+                "requires_whatsapp_share": False,
                 "whatsapp_shared": False,
             }
             whatsapp_text = _whatsapp_decision_message("NOT_BID", decision_data)
@@ -3190,7 +3127,7 @@ def submit_allocation():
     data = request.get_json() or {}
     tender_no = (data.get("tender_no") or "").strip().upper()
     data["approved_by"] = _current_member()
-    data["requires_whatsapp_share"] = True
+    data["requires_whatsapp_share"] = False
     data["whatsapp_shared"] = False
     try:
         whatsapp_text = _whatsapp_decision_message("BID_ALLOCATION", data)
@@ -3251,15 +3188,8 @@ def mark_synced():
             if row is None:
                 conn.commit()
                 return jsonify({"status": "ok", "message": "Action was already removed."})
-            action_data = json.loads(row["data_json"])
-            requires_share = action_data.get("requires_whatsapp_share") is True
-            shared = action_data.get("whatsapp_shared") is True
-            if requires_share and not shared:
-                conn.execute("UPDATE pending_sync SET synced = 1 WHERE id = ?", (sync_id,))
-                message = "Local sync recorded; waiting for WhatsApp send confirmation."
-            else:
-                conn.execute("DELETE FROM pending_sync WHERE id = ?", (sync_id,))
-                message = "Local sync recorded and action removed."
+            conn.execute("DELETE FROM pending_sync WHERE id = ?", (sync_id,))
+            message = f"Action {sync_id} permanently deleted. Zero storage used."
             conn.commit()
             return jsonify({"status": "ok", "message": message})
         except Exception:

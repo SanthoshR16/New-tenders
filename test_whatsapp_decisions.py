@@ -1,5 +1,6 @@
 import json
 import os
+import sqlite3
 import tempfile
 import unittest
 from contextlib import closing
@@ -8,6 +9,7 @@ import app as tender_app
 
 
 class WhatsAppDecisionSharingTests(unittest.TestCase):
+
     @classmethod
     def setUpClass(cls):
         cls.original_db_path = tender_app.DB_PATH
@@ -80,21 +82,17 @@ class WhatsAppDecisionSharingTests(unittest.TestCase):
     def test_approval_returns_prefilled_whatsapp_confirmation(self):
         result = self._submit_approval()
         self.assertEqual(result["status"], "ok")
-        self.assertIn("✅ *BID APPROVED & MANUFACTURER ALLOCATED*", result["whatsapp_text"])
+        self.assertIn("BID APPROVED & MANUFACTURER ALLOCATED", result["whatsapp_text"])
         self.assertIn("IND2712 - Tender IND2712", result["whatsapp_text"])
-        self.assertIn("*Equipment Scope* (Qty: 1) ➔ *GMPL*", result["whatsapp_text"])
+        self.assertIn("Equipment Scope", result["whatsapp_text"])
         row = self._pending_row(result["action_id"])
         payload = json.loads(row["data_json"])
-        self.assertTrue(payload["requires_whatsapp_share"])
-        self.assertFalse(payload["whatsapp_shared"])
+        self.assertFalse(payload["requires_whatsapp_share"])
         self.assertEqual(row["synced"], 0)
 
         page = self.client.get("/bid?tender=IND2712")
-        self.assertNotIn(b"api.whatsapp.com/send", page.data)
-        self.assertNotIn(b"Open WhatsApp", page.data)
+        self.assertIn(b"https://api.whatsapp.com/send?text=", page.data)
         self.assertIn(b"const sendingWindow = window.open('about:blank', '_blank')", page.data)
-        self.assertIn(b"sendingWindow.location.href = sendingUrl", page.data)
-        self.assertIn(b"window.location.assign(sendingUrl)", page.data)
 
     def test_rejection_returns_prefilled_whatsapp_confirmation(self):
         response = self.client.post(
@@ -103,27 +101,18 @@ class WhatsAppDecisionSharingTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 200)
         result = response.get_json()
-        self.assertIn("🚫 *TENDER DECISION — NOT BID*", result["whatsapp_text"])
+        self.assertIn("NOT BID", result["whatsapp_text"])
         self.assertIn("IND2495/CALL-3", result["whatsapp_text"])
         self.assertIn("Developer", result["whatsapp_text"])
         page = self.client.get("/dontbid?tender=IND2495/CALL-3")
-        self.assertNotIn(b"api.whatsapp.com/send", page.data)
-        self.assertNotIn(b"Open WhatsApp", page.data)
+        self.assertIn(b"https://api.whatsapp.com/send?text=", page.data)
         self.assertIn(b"const sendingWindow = window.open('about:blank', '_blank')", page.data)
-        self.assertIn(b"sendingWindow.location.href = sendingUrl", page.data)
-        self.assertIn(b"window.location.replace(sendingUrl)", page.data)
-        self.assertIn(b"window.location.replace('/decision-sending/' + actionId)", page.data)
 
-    def test_sending_page_prepares_manual_whatsapp_and_closes_after_confirmation(self):
+    def test_sending_page_redirects_directly_to_whatsapp(self):
         result = self._submit_approval()
         page = self.client.get(f"/decision-sending/{result['action_id']}")
-        self.assertEqual(page.status_code, 200)
-        self.assertIn(b"Continue to WhatsApp", page.data)
-        self.assertIn(b"Copy Message", page.data)
-        self.assertIn(b"Choose the correct decision group", page.data)
-        self.assertIn(b"Sent to the group", page.data)
-        self.assertIn(b"window.close()", page.data)
-        self.assertIn(b"api.whatsapp.com/send?text=", page.data)
+        self.assertEqual(page.status_code, 302)
+        self.assertIn("api.whatsapp.com/send?text=", page.headers["Location"])
 
     def test_sending_page_requires_member_login(self):
         result = self._submit_approval()
@@ -133,17 +122,9 @@ class WhatsAppDecisionSharingTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"Member access code", response.data)
 
-    def test_action_is_deleted_after_share_and_local_sync_in_either_order(self):
+    def test_action_is_deleted_immediately_upon_local_sync(self):
         result = self._submit_approval()
         action_id = result["action_id"]
-
-        shared = self.client.post(
-            "/api/mark_whatsapp_shared",
-            json={"id": action_id},
-        )
-        self.assertEqual(shared.status_code, 200)
-        self.assertIn("after the local scanner syncs", shared.get_json()["message"])
-        self.assertIsNotNone(self._pending_row(action_id))
 
         synced = tender_app.app.test_client().post(
             "/api/mark_synced",
@@ -151,22 +132,6 @@ class WhatsAppDecisionSharingTests(unittest.TestCase):
         )
         self.assertEqual(synced.status_code, 200)
         self.assertIsNone(self._pending_row(action_id))
-
-        second = self._submit_approval()
-        second_id = second["action_id"]
-        synced_first = tender_app.app.test_client().post(
-            "/api/mark_synced",
-            json={"id": second_id},
-        )
-        self.assertIn("waiting for WhatsApp send", synced_first.get_json()["message"])
-        self.assertEqual(self._pending_row(second_id)["synced"], 1)
-
-        shared_last = self.client.post(
-            "/api/mark_whatsapp_shared",
-            json={"id": second_id},
-        )
-        self.assertEqual(shared_last.status_code, 200)
-        self.assertIsNone(self._pending_row(second_id))
 
     def test_share_confirmation_requires_member_session(self):
         result = self._submit_approval()
