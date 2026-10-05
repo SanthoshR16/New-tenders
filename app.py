@@ -170,37 +170,207 @@ AUTH_GATE_HTML = """<!DOCTYPE html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>San Tenders — Member Sign In</title>
+    <title>San Tenders - Member Sign In</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&display=swap" rel="stylesheet">
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f8fafc; color: #0f172a; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px 16px; -webkit-font-smoothing: antialiased; }
-        .card { max-width: 440px; width: 100%; background: #ffffff; border-radius: 16px; box-shadow: 0 10px 30px -5px rgba(15, 23, 42, 0.08), 0 4px 6px -2px rgba(15, 23, 42, 0.03); overflow: hidden; border: 1px solid #e2e8f0; text-align: center; }
-        .hdr { background: linear-gradient(135deg, #15803d 0%, #166534 100%); color: #ffffff; padding: 28px 24px; position: relative; }
-        .badge { display: inline-flex; align-items: center; gap: 6px; background: rgba(255,255,255,0.2); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); color: #ffffff; padding: 4px 12px; border-radius: 9999px; font-size: 11px; font-weight: 700; letter-spacing: 0.5px; border: 1px solid rgba(255,255,255,0.25); margin-bottom: 10px; text-transform: uppercase; }
-        .hdr h2 { font-size: 21px; font-weight: 700; color: #ffffff; margin-bottom: 4px; letter-spacing: -0.01em; }
-        .hdr p { font-size: 13px; color: rgba(255, 255, 255, 0.88); font-weight: 500; }
-        .roles { display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
-        .role-chip { font-size: 11.5px; font-weight: 600; background: rgba(255,255,255,0.15); color: #ffffff; padding: 3px 10px; border-radius: 9999px; border: 1px solid rgba(255,255,255,0.2); }
-        .content { padding: 28px 24px; }
-        #status { font-size: 13.5px; color: #475569; line-height: 1.5; margin-bottom: 18px; font-weight: 500; }
-        .form-group { text-align: left; margin-bottom: 16px; }
-        .form-group label { display: block; font-size: 12.5px; font-weight: 600; color: #334155; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
-        .input-wrap { position: relative; }
-        .input-wrap input { width: 100%; padding: 12px 14px; font-size: 14px; font-family: inherit; border: 1.5px solid #cbd5e1; border-radius: 10px; background: #f8fafc; color: #0f172a; outline: none; transition: all 0.15s ease; }
-        .input-wrap input:focus { border-color: #15803d; background: #ffffff; box-shadow: 0 0 0 3px rgba(21, 128, 61, 0.12); }
-        .submit-btn { width: 100%; padding: 13px; background: #15803d; color: #ffffff; border: 0; border-radius: 10px; font-size: 14.5px; font-weight: 700; font-family: inherit; cursor: pointer; transition: all 0.15s ease; box-shadow: 0 2px 4px rgba(21, 128, 61, 0.2); }
-        .submit-btn:hover:not(:disabled) { background: #166534; transform: translateY(-1px); box-shadow: 0 4px 8px rgba(21, 128, 61, 0.25); }
-        .submit-btn:disabled { opacity: 0.6; cursor: not-allowed; }
-        .footer-note { margin-top: 16px; font-size: 12px; color: #94a3b8; font-weight: 500; }
+        body {
+            font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: #f3f4f6;
+            color: #111827;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px 16px;
+            -webkit-font-smoothing: antialiased;
+        }
+        .card {
+            width: 100%;
+            max-width: 340px;
+            background: #ffffff;
+            border-radius: 12px;
+            border: 1px solid #e5e7eb;
+            border-top: 4px solid #047857;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+            overflow: hidden;
+            text-align: center;
+        }
+        .hdr {
+            padding: 24px 20px 16px;
+        }
+        .lock-circle {
+            width: 44px;
+            height: 44px;
+            background: #ecfdf5;
+            border-radius: 50%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 12px;
+        }
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            background: #ecfdf5;
+            border: 1px solid #a7f3d0;
+            color: #065f46;
+            padding: 3px 10px;
+            border-radius: 999px;
+            font-size: 11px;
+            font-weight: 500;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+        }
+        .hdr h2 {
+            font-size: 22px;
+            font-weight: 500;
+            color: #111827;
+            margin-bottom: 4px;
+            line-height: 1.25;
+        }
+        .hdr p {
+            font-size: 13px;
+            color: #6b7280;
+            font-weight: 400;
+        }
+        .roles {
+            display: flex;
+            justify-content: center;
+            gap: 6px;
+            flex-wrap: wrap;
+            margin-top: 12px;
+        }
+        .role-chip {
+            font-size: 11px;
+            font-weight: 500;
+            background: #f3f4f6;
+            color: #4b5563;
+            padding: 3px 9px;
+            border-radius: 999px;
+            border: 1px solid #e5e7eb;
+        }
+        .divider {
+            border: 0;
+            border-top: 1px solid #e5e7eb;
+            margin: 0;
+        }
+        .content {
+            padding: 20px;
+        }
+        .status-row {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+        .spinner {
+            width: 14px;
+            height: 14px;
+            border: 2px solid #d1d5db;
+            border-top-color: #047857;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            flex-shrink: 0;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .spinner { animation: none; }
+        }
+        #status {
+            font-size: 13px;
+            color: #4b5563;
+            line-height: 1.4;
+            font-weight: 400;
+        }
+        .form-group {
+            text-align: left;
+            margin-bottom: 16px;
+        }
+        .form-group label {
+            display: block;
+            font-size: 11px;
+            font-weight: 500;
+            color: #6b7280;
+            margin-bottom: 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
+        .input-wrap {
+            position: relative;
+        }
+        .input-wrap input {
+            width: 100%;
+            height: 40px;
+            padding: 8px 12px;
+            font-size: 16px;
+            font-family: inherit;
+            font-weight: 400;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            background: #ffffff;
+            color: #111827;
+            outline: none;
+            transition: border-color 0.15s ease, box-shadow 0.15s ease;
+        }
+        .input-wrap input:focus {
+            border-color: #047857;
+            box-shadow: 0 0 0 3px rgba(4, 120, 87, 0.15);
+        }
+        .submit-btn {
+            width: 100%;
+            height: 40px;
+            padding: 0 16px;
+            background: #047857;
+            color: #ffffff;
+            border: 0;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 500;
+            letter-spacing: 0.06em;
+            font-family: inherit;
+            cursor: pointer;
+            transition: background 0.15s ease;
+        }
+        .submit-btn:hover:not(:disabled) {
+            background: #065f46;
+        }
+        .submit-btn:focus-visible {
+            outline: 2px solid #047857;
+            outline-offset: 2px;
+        }
+        .submit-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        .footer-note {
+            background: #f9fafb;
+            border-top: 1px solid #e5e7eb;
+            padding: 10px 16px;
+            font-size: 11px;
+            color: #6b7280;
+            font-weight: 400;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            border-radius: 0 0 12px 12px;
+        }
     </style>
 </head>
 <body>
     <main class="card">
         <div class="hdr">
-            <div class="badge">🔐 Security Gateway</div>
+            <div class="lock-circle">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#047857" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+            </div>
+            <div><span class="badge">Security Gateway</span></div>
             <h2>San Tenders</h2>
             <p>Authorized Decision Approvals</p>
             <div class="roles">
@@ -209,8 +379,12 @@ AUTH_GATE_HTML = """<!DOCTYPE html>
                 <span class="role-chip">Developer</span>
             </div>
         </div>
+        <hr class="divider">
         <div class="content">
-            <p id="status" role="status" aria-live="polite">Checking saved access / credentials…</p>
+            <div class="status-row">
+                <span class="spinner" id="auth-spinner"></span>
+                <p id="status" role="status" aria-live="polite">Checking saved access / credentials.</p>
+            </div>
             <form id="login-form" style="display:none">
                 <div class="form-group">
                     <label for="access-code">Enter Member access code</label>
@@ -220,13 +394,18 @@ AUTH_GATE_HTML = """<!DOCTYPE html>
                 </div>
                 <button type="submit" class="submit-btn">Unlock Tender Portal</button>
             </form>
-            <div class="footer-note">Protected via End-to-End HMAC Encryption</div>
+        </div>
+        <div class="footer-note">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path><path d="m9 12 2 2 4-4"></path></svg>
+            <span>Protected via End-to-End HMAC Encryption</span>
         </div>
     </main>
     <script>
         let reopeningTender = false;
         let checkingSession = false;
         function showSignIn(message) {
+            const spinner = document.getElementById("auth-spinner");
+            if (spinner) spinner.style.display = "none";
             document.getElementById("status").textContent = message;
             document.getElementById("login-form").style.display = "block";
         }
@@ -259,9 +438,11 @@ AUTH_GATE_HTML = """<!DOCTYPE html>
         document.getElementById("login-form").addEventListener("submit", async event => {
             event.preventDefault();
             const status = document.getElementById("status");
+            const spinner = document.getElementById("auth-spinner");
+            if (spinner) spinner.style.display = "inline-block";
             const button = event.currentTarget.querySelector("button");
             button.disabled = true;
-            button.textContent = "Verifying Access…";
+            button.textContent = "Verifying Access...";
             try {
                 const response = await fetch("/api/auth/login", {
                     method: "POST",
@@ -271,16 +452,18 @@ AUTH_GATE_HTML = """<!DOCTYPE html>
                 });
                 const result = await response.json();
                 if (!response.ok) {
+                    if (spinner) spinner.style.display = "none";
                     status.textContent = result.message || "This access code is invalid.";
                     status.style.color = "#dc2626";
                     button.disabled = false;
                     button.textContent = "Unlock Tender Portal";
                     return;
                 }
-                status.textContent = "Access confirmed for " + result.role + ". Opening tender…";
-                status.style.color = "#15803d";
+                status.textContent = "Access confirmed for " + result.role + ". Opening tender...";
+                status.style.color = "#047857";
                 window.location.reload();
             } catch (error) {
+                if (spinner) spinner.style.display = "none";
                 status.textContent = "Could not sign in. Check your connection and retry.";
                 status.style.color = "#dc2626";
                 button.disabled = false;
@@ -2644,11 +2827,12 @@ def bid_page():
         it_name_esc = html_lib.escape(str(it_name), quote=True)
 
 
+        code_badge = f'<span class="item-code-chip">{it_code}</span>' if it_code else ''
         items_rows += f"""
                 <tr class="item-row" data-id="{it_id}" data-name="{it_name_esc}" data-qty="{it_qty}" data-manufacturer="" tabindex="0" role="button" aria-label="Assign manufacturer to {it_name_esc}" onclick="assignActiveManufacturer(this)" onkeydown="if(event.key==='Enter'||event.key===' '){{event.preventDefault();assignActiveManufacturer(this)}}">
-                    <td class="td-item" style="word-break:break-word; font-size:14px; line-height:1.35;">{code_badge}<b>{it_name_esc}</b></td>
+                    <td class="td-item" style="word-break:break-word; font-size:14px; line-height:1.35;">{code_badge}<span class="item-name-text">{it_name_esc}</span></td>
             <td class="td-qty"><span class="qty-badge">{it_qty}</span></td>
-            <td class="td-mfg"><span class="manufacturer-display" style="color:#64748b;">Tap to assign</span></td>
+            <td class="td-mfg"><span class="manufacturer-display">Tap to assign</span></td>
         </tr>
         """
 
@@ -2664,97 +2848,439 @@ def bid_page():
         <title>BID APPROVED — {tender['tender_no']}</title>
         <link rel="preconnect" href="https://fonts.googleapis.com">
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&display=swap" rel="stylesheet">
         <style>
             * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-            body {{ font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f8fafc; padding: 24px 16px; color: #0f172a; line-height: 1.5; -webkit-font-smoothing: antialiased; }}
-            .card {{ max-width: 840px; margin: 0 auto; background: #ffffff; border-radius: 16px; box-shadow: 0 10px 30px -5px rgba(15, 23, 42, 0.08), 0 4px 6px -2px rgba(15, 23, 42, 0.03); overflow: hidden; border: 1px solid #e2e8f0; transition: box-shadow 0.2s ease; }}
-            .hdr {{ background: linear-gradient(135deg, #15803d 0%, #166534 100%); color: #ffffff; padding: 24px 28px; position: relative; box-shadow: inset 0 1px 0 rgba(255,255,255,0.15); }}
-            .badge {{ display: inline-flex; align-items: center; gap: 6px; background: rgba(255,255,255,0.22); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); color: #ffffff; padding: 4px 12px; border-radius: 9999px; font-size: 11px; font-weight: 700; letter-spacing: 0.5px; border: 1px solid rgba(255,255,255,0.3); margin-bottom: 8px; text-transform: uppercase; }}
-            .hdr h2 {{ font-size: 20px; font-weight: 700; line-height: 1.35; margin: 0 0 6px 0; color: #ffffff; letter-spacing: -0.01em; }}
-            .hdr-meta {{ font-size: 13.5px; color: rgba(255, 255, 255, 0.9); font-weight: 500; display: flex; flex-wrap: wrap; gap: 12px; }}
-            .approver-bar {{ background: #f8fafc; padding: 12px 28px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #e2e8f0; font-size: 13.5px; }}
-            .approver-pill {{ display: inline-flex; align-items: center; gap: 6px; background: #f0fdf4; border: 1px solid #bbf7d0; padding: 4px 10px; border-radius: 9999px; color: #15803d; font-weight: 600; font-size: 13px; }}
-            .content-pad {{ padding: 20px 28px; }}
-            .mfg-panel {{ display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; padding: 12px 16px; background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.02); }}
-            .bulk-mfg-select {{ flex: 1; min-width: 170px; padding: 9px 12px; border: 1.5px solid #cbd5e1; border-radius: 8px; font-size: 13.5px; font-weight: 500; background: #ffffff; color: #0f172a; outline: none; transition: all 0.15s ease; cursor: pointer; }}
-            .bulk-mfg-select:focus {{ border-color: #22c55e; box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.15); }}
-            .filter-input {{ width: 100%; padding: 10px 14px; margin-bottom: 12px; border: 1.5px solid #cbd5e1; border-radius: 8px; font-size: 13.5px; outline: none; transition: all 0.15s ease; }}
-            .filter-input:focus {{ border-color: #22c55e; box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.15); }}
-            .table-wrap {{ max-height: 520px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.02); }}
-            table {{ width: 100%; border-collapse: separate; border-spacing: 0; }}
-            th {{ position: sticky; top: 0; z-index: 10; background: #f8fafc; color: #475569; font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; padding: 11px 14px; border-bottom: 1px solid #e2e8f0; text-align: left; }}
-            td {{ padding: 12px 14px; border-bottom: 1px solid #f1f5f9; font-size: 13.5px; vertical-align: middle; }}
-            .item-row {{ cursor: pointer; transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1); outline: none; }}
-            .item-row:hover {{ background-color: #f8fafc; }}
-            .item-row:focus-visible {{ outline: 2px solid #22c55e; outline-offset: -2px; }}
-            .item-row.is-assigned {{ background-color: #f0fdf4; }}
-            .td-qty {{ text-align: center; }}
-            .qty-badge {{ display: inline-block; padding: 3px 8px; background: #eff6ff; color: #2563eb; font-weight: 700; border-radius: 9999px; font-size: 13px; min-width: 28px; text-align: center; }}
-            .manufacturer-display {{ display: inline-flex; align-items: center; justify-content: center; padding: 5px 12px; border-radius: 9999px; background: #f1f5f9; font-size: 12.5px; font-weight: 500; color: #64748b; border: 1px solid #e2e8f0; transition: all 0.15s ease; white-space: nowrap; }}
-            .item-row.is-assigned .manufacturer-display {{ color: #15803d !important; background: #dcfce7; font-weight: 700; border-color: #bbf7d0; box-shadow: 0 1px 2px rgba(22, 101, 52, 0.05); }}
-            .btn-sub {{ display: block; width: 100%; margin: 18px 0 0 0; background: linear-gradient(135deg, #16a34a 0%, #15803d 100%); color: #ffffff; border: none; padding: 15px 24px; font-size: 15.5px; font-weight: 700; border-radius: 10px; cursor: pointer; text-align: center; box-shadow: 0 4px 12px rgba(22, 163, 74, 0.22); transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1); letter-spacing: 0.01em; }}
-            .btn-sub:hover {{ transform: translateY(-1px); box-shadow: 0 6px 18px rgba(22, 163, 74, 0.32); }}
-            .btn-sub:active {{ transform: translateY(0); }}
-            .modal {{ display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(15, 23, 42, 0.5); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); align-items: center; justify-content: center; z-index: 99; }}
-            .modal-content {{ background: #ffffff; padding: 24px; border-radius: 16px; width: 90%; max-width: 390px; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04); }}
+            body {{
+                font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+                background: #f3f4f6;
+                padding: 24px 16px;
+                color: #111827;
+                line-height: 1.5;
+                -webkit-font-smoothing: antialiased;
+            }}
+            .card {{
+                max-width: 600px;
+                margin: 24px auto;
+                background: #ffffff;
+                border-radius: 12px;
+                border: 1px solid #e5e7eb;
+                box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+                overflow: hidden;
+            }}
+            .hdr {{
+                background: #065f46;
+                color: #ffffff;
+                padding: 20px 24px;
+            }}
+            .status-pill {{
+                display: inline-flex;
+                align-items: center;
+                gap: 6px;
+                background: rgba(255, 255, 255, 0.15);
+                border: 1px solid rgba(255, 255, 255, 0.25);
+                color: #ffffff;
+                padding: 3px 10px;
+                border-radius: 999px;
+                font-size: 11px;
+                font-weight: 500;
+                letter-spacing: 0.08em;
+                text-transform: uppercase;
+                margin-bottom: 10px;
+            }}
+            .status-dot {{
+                width: 6px;
+                height: 6px;
+                background: #6ee7b7;
+                border-radius: 50%;
+                display: inline-block;
+            }}
+            .hdr h2 {{
+                font-size: 20px;
+                font-weight: 500;
+                line-height: 1.35;
+                margin: 0 0 12px 0;
+                color: #ffffff;
+            }}
+            .hdr-meta {{
+                display: flex;
+                flex-wrap: wrap;
+                gap: 16px;
+                font-size: 14px;
+            }}
+            .meta-pair {{
+                display: inline-flex;
+                align-items: baseline;
+                gap: 6px;
+            }}
+            .meta-lbl {{
+                font-size: 11px;
+                font-weight: 500;
+                text-transform: uppercase;
+                letter-spacing: 0.08em;
+                color: #a7f3d0;
+            }}
+            .meta-val {{
+                font-size: 14px;
+                font-weight: 500;
+                color: #ffffff;
+            }}
+            .approver-bar {{
+                background: #f9fafb;
+                padding: 10px 24px;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                border-bottom: 1px solid #e5e7eb;
+                font-size: 13px;
+            }}
+            .approver-user {{
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                color: #6b7280;
+                font-weight: 400;
+            }}
+            .approver-pill {{
+                display: inline-flex;
+                align-items: center;
+                background: #ecfdf5;
+                border: 1px solid #a7f3d0;
+                padding: 2px 10px;
+                border-radius: 999px;
+                color: #065f46;
+                font-weight: 500;
+                font-size: 12px;
+            }}
+            .content-pad {{
+                padding: 20px 24px;
+            }}
+            .mfg-panel {{
+                background: #f9fafb;
+                border: 1px solid #e5e7eb;
+                border-radius: 8px;
+                padding: 12px 16px;
+                margin-bottom: 16px;
+            }}
+            .mfg-panel label {{
+                display: block;
+                font-size: 13px;
+                font-weight: 500;
+                color: #111827;
+                margin-bottom: 8px;
+            }}
+            .bulk-mfg-select {{
+                width: 100%;
+                height: 40px;
+                padding: 0 12px;
+                border: 1px solid #d1d5db;
+                border-radius: 8px;
+                font-size: 16px;
+                font-family: inherit;
+                font-weight: 400;
+                background: #ffffff;
+                color: #111827;
+                outline: none;
+                transition: border-color 0.15s ease, box-shadow 0.15s ease;
+                cursor: pointer;
+            }}
+            .bulk-mfg-select:focus {{
+                border-color: #047857;
+                box-shadow: 0 0 0 3px rgba(4, 120, 87, 0.15);
+            }}
+            .filter-input {{
+                width: 100%;
+                height: 40px;
+                padding: 8px 12px;
+                margin-bottom: 12px;
+                border: 1px solid #d1d5db;
+                border-radius: 8px;
+                font-size: 16px;
+                font-family: inherit;
+                font-weight: 400;
+                background: #ffffff;
+                color: #111827;
+                outline: none;
+                transition: border-color 0.15s ease, box-shadow 0.15s ease;
+            }}
+            .filter-input:focus {{
+                border-color: #047857;
+                box-shadow: 0 0 0 3px rgba(4, 120, 87, 0.15);
+            }}
+            .helper-row {{
+                margin-bottom: 10px;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                gap: 8px;
+            }}
+            .helper-text {{
+                font-size: 12px;
+                color: #6b7280;
+                font-weight: 400;
+            }}
+            .count-group {{
+                display: flex;
+                align-items: center;
+                gap: 8px;
+            }}
+            #match-count {{
+                font-size: 12px;
+                color: #6b7280;
+                font-weight: 400;
+            }}
+            .progress-track {{
+                width: 48px;
+                height: 6px;
+                background: #e5e7eb;
+                border-radius: 999px;
+                overflow: hidden;
+                flex-shrink: 0;
+            }}
+            #assign-progress-bar {{
+                width: 0%;
+                height: 100%;
+                background: #047857;
+                border-radius: 999px;
+                transition: width 0.2s ease;
+            }}
+            .table-wrap {{
+                max-height: 520px;
+                overflow-x: auto;
+                overflow-y: auto;
+                border: 1px solid #e5e7eb;
+                border-radius: 8px;
+            }}
+            table {{
+                width: 100%;
+                border-collapse: collapse;
+                min-width: 100%;
+            }}
+            th {{
+                position: sticky;
+                top: 0;
+                z-index: 10;
+                background: #f9fafb;
+                color: #6b7280;
+                font-size: 11px;
+                font-weight: 500;
+                text-transform: uppercase;
+                letter-spacing: 0.08em;
+                padding: 10px 14px;
+                border-bottom: 1px solid #e5e7eb;
+                text-align: left;
+            }}
+            td {{
+                padding: 12px 14px;
+                border-bottom: 1px solid #e5e7eb;
+                font-size: 14px;
+                vertical-align: middle;
+            }}
+            .item-row {{
+                cursor: pointer;
+                min-height: 44px;
+                transition: background-color 0.15s ease;
+                outline: none;
+            }}
+            .item-row:hover {{
+                background-color: #f9fafb;
+            }}
+            .item-row:focus-visible {{
+                outline: 2px solid #047857;
+                outline-offset: -2px;
+            }}
+            .item-row.is-assigned {{
+                background-color: #fcfdfd;
+            }}
+            .item-code-chip {{
+                font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+                font-size: 11px;
+                font-weight: 400;
+                background: #f3f4f6;
+                color: #4b5563;
+                padding: 2px 6px;
+                border-radius: 4px;
+                border: 1px solid #e5e7eb;
+                display: inline-block;
+                margin-right: 6px;
+            }}
+            .item-name-text {{
+                font-size: 14px;
+                font-weight: 500;
+                color: #111827;
+            }}
+            .td-qty {{
+                text-align: center;
+                width: 54px;
+            }}
+            .qty-badge {{
+                display: inline-block;
+                padding: 2px 8px;
+                background: #eff6ff;
+                color: #1d4ed8;
+                font-weight: 500;
+                border-radius: 999px;
+                font-size: 12px;
+                border: 1px solid #dbeafe;
+                min-width: 28px;
+                text-align: center;
+            }}
+            .td-mfg {{
+                text-align: right;
+                width: 130px;
+            }}
+            .manufacturer-display {{
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                padding: 4px 10px;
+                border-radius: 999px;
+                background: #ffffff;
+                font-size: 12px;
+                font-weight: 400;
+                color: #6b7280;
+                border: 1px dashed #d1d5db;
+                min-height: 28px;
+                white-space: nowrap;
+                transition: all 0.15s ease;
+            }}
+            .item-row.is-assigned .manufacturer-display {{
+                background: #ecfdf5 !important;
+                border: 1px solid #a7f3d0 !important;
+                color: #047857 !important;
+                font-weight: 500 !important;
+            }}
+            .btn-sub {{
+                display: block;
+                width: 100%;
+                margin: 20px 0 0 0;
+                background: #047857;
+                color: #ffffff;
+                border: none;
+                padding: 12px 16px;
+                font-size: 13px;
+                font-weight: 500;
+                font-family: inherit;
+                letter-spacing: 0.06em;
+                border-radius: 8px;
+                cursor: pointer;
+                text-align: center;
+                transition: background 0.15s ease;
+            }}
+            .btn-sub:hover {{
+                background: #065f46;
+            }}
+            .btn-sub:focus-visible {{
+                outline: 2px solid #047857;
+                outline-offset: 2px;
+            }}
+            .modal {{
+                display: none;
+                position: fixed;
+                top: 0; left: 0; right: 0; bottom: 0;
+                background: rgba(17, 24, 39, 0.4);
+                align-items: center;
+                justify-content: center;
+                z-index: 99;
+            }}
+            .modal-content {{
+                background: #ffffff;
+                padding: 24px;
+                border-radius: 12px;
+                width: 90%;
+                max-width: 380px;
+                border: 1px solid #e5e7eb;
+                box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+            }}
+            .modal-content h3 {{
+                font-size: 16px;
+                font-weight: 500;
+                color: #111827;
+                margin-top: 0;
+                margin-bottom: 12px;
+            }}
+            .modal-content input {{
+                width: 100%;
+                height: 40px;
+                padding: 8px 12px;
+                font-size: 16px;
+                font-family: inherit;
+                font-weight: 400;
+                border: 1px solid #d1d5db;
+                border-radius: 8px;
+                margin-bottom: 16px;
+                outline: none;
+            }}
+            .modal-content input:focus {{
+                border-color: #047857;
+                box-shadow: 0 0 0 3px rgba(4, 120, 87, 0.15);
+            }}
             @media (max-width: 600px) {{
-                body {{ padding: 10px 8px; }}
-                .card {{ border-radius: 12px; }}
+                body {{ padding: 12px 8px; }}
+                .card {{ margin: 8px auto; border-radius: 12px; }}
                 .hdr {{ padding: 16px 16px; }}
-                .hdr h2 {{ font-size: 17px !important; }}
+                .hdr h2 {{ font-size: 18px !important; }}
                 .approver-bar {{ padding: 10px 16px; font-size: 13px; }}
-                .content-pad {{ padding: 14px 12px !important; }}
-                th, td {{ padding: 9px 8px; }}
-                .th-qty, .td-qty {{ width: 40px !important; }}
-                .th-mfg, .td-mfg {{ width: 110px !important; min-width: 100px !important; }}
-                .manufacturer-display {{ font-size: 12px !important; padding: 4px 8px !important; }}
-                .btn-sub {{ padding: 13px; font-size: 14.5px; }}
+                .content-pad {{ padding: 16px 12px !important; }}
+                th, td {{ padding: 10px 8px; }}
+                .td-qty {{ width: 44px !important; }}
+                .td-mfg {{ width: 110px !important; }}
+                .manufacturer-display {{ font-size: 11px !important; padding: 3px 8px !important; }}
             }}
         </style>
     </head>
     <body>
         <div class="card" id="form-card" style="display:none;">
             <div class="hdr">
-                <span class="badge">🟢 Bid Approved</span>
+                <div><span class="status-pill"><span class="status-dot"></span>Bid Approved</span></div>
                 <h2>{tender['tender_name']}</h2>
-                <div class="hdr-meta"><span><b>Tender:</b> {tender['tender_no']}</span><span><b>Dept:</b> {tender['department']}</span></div>
+                <div class="hdr-meta">
+                    <span class="meta-pair"><span class="meta-lbl">TENDER</span><span class="meta-val">{tender['tender_no']}</span></span>
+                    <span class="meta-pair"><span class="meta-lbl">DEPT</span><span class="meta-val">{tender['department']}</span></span>
+                </div>
             </div>
             <div class="approver-bar">
-                <div style="display:flex; align-items:center; gap:8px;"><b>👤 Approver:</b> <span class="approver-pill" id="approver-display">{authorized_role}</span></div>
+                <div class="approver-user">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                    <span>Approver:</span>
+                    <span class="approver-pill" id="approver-display">{authorized_role}</span>
+                </div>
                 <input type="hidden" id="approver-select" value="{authorized_role}">
             </div>
             <div class="content-pad">
                 {search_box_html}
                 <div class="mfg-panel">
-                    <label for="bulk-manufacturer" style="font-weight:600; font-size:13px; color:#334155;">1. Choose manufacturer, then tap its items:</label>
+                    <label for="bulk-manufacturer">1. Choose manufacturer, then tap its items:</label>
                     <select id="bulk-manufacturer" class="bulk-mfg-select" onchange="handleActiveManufacturerChange(this)">
                         {bulk_manufacturer_options}
                     </select>
                 </div>
-                <div style="margin-bottom: 10px; display:flex; justify-content:space-between; align-items:center; color:#475569; font-size:13px;">
-                    <span>Tap an assigned item again to remove it.</span>
-                    <span id="match-count" style="font-size:12px; color:#64748b;"></span>
+                <div class="helper-row">
+                    <span class="helper-text">Tap an assigned item again to remove it.</span>
+                    <div class="count-group">
+                        <span id="match-count"></span>
+                        <div class="progress-track"><div id="assign-progress-bar"></div></div>
+                    </div>
                 </div>
                 <div class="table-wrap">
                     <table>
-                        <thead style="position: sticky; top: 0; z-index: 10;">
-                            <tr><th class="th-item">Item — tap to assign</th><th class="th-qty" style="text-align:center; width:46px;">Qty</th><th class="th-mfg" style="width:115px;">Manufacturer</th></tr>
+                        <thead>
+                            <tr><th class="th-item">Item — tap to assign</th><th class="th-qty" style="text-align:center;">Qty</th><th class="th-mfg" style="text-align:right;">Manufacturer</th></tr>
                         </thead>
                         <tbody id="items-tbody">{items_rows}</tbody>
                     </table>
                 </div>
+                <button type="button" class="btn-sub" id="sub-btn" onclick="submitAllocation()">SUBMIT MANUFACTURER ALLOCATION</button>
             </div>
-            <button type="button" class="btn-sub" id="sub-btn" onclick="submitAllocation()">SUBMIT MANUFACTURER ALLOCATION</button>
         </div>
 
         <div class="modal" id="add-modal">
             <div class="modal-content">
-                <h3 style="margin-top:0;">➕ Add Manufacturer</h3>
-                <input type="text" id="new-mfg-input" placeholder="e.g. Olympus, Philips" style="width:100%; padding:10px; border:1px solid #cbd5e1; border-radius:6px; margin-bottom:12px;">
+                <h3>Add Manufacturer</h3>
+                <input type="text" id="new-mfg-input" placeholder="e.g. Olympus, Philips">
                 <div style="display:flex; justify-content:flex-end; gap:8px;">
-                    <button onclick="document.getElementById('add-modal').style.display='none'" style="padding:6px 12px; background:#f1f5f9; border:none; border-radius:6px;">Cancel</button>
-                    <button onclick="addMfg()" style="padding:6px 14px; background:#16a34a; color:white; border:none; border-radius:6px; font-weight:bold;">ADD</button>
+                    <button onclick="document.getElementById('add-modal').style.display='none'" style="padding:8px 14px; background:#f3f4f6; color:#4b5563; border:1px solid #e5e7eb; border-radius:8px; font-size:13px; font-weight:500; cursor:pointer;">Cancel</button>
+                    <button onclick="addMfg()" style="padding:8px 16px; background:#047857; color:#ffffff; border:none; border-radius:8px; font-size:13px; font-weight:500; cursor:pointer;">ADD</button>
                 </div>
             </div>
         </div>
@@ -2767,8 +3293,14 @@ def bid_page():
 
             function updateAssignmentCount() {{
                 const assigned = document.querySelectorAll('#items-tbody .item-row[data-manufacturer]:not([data-manufacturer=""])').length;
+                const total = {len(tender["items"])};
                 const count = document.getElementById('match-count');
-                if (count) count.textContent = assigned + ' of {len(tender["items"])} items assigned';
+                if (count) count.textContent = assigned + ' of ' + total + ' items assigned';
+                const pBar = document.getElementById('assign-progress-bar');
+                if (pBar) {{
+                    const pct = total > 0 ? Math.round((assigned / total) * 100) : 0;
+                    pBar.style.width = pct + '%';
+                }}
             }}
             function filterItems() {{
                 const q = document.getElementById('filter-input').value.toLowerCase().trim();
@@ -2822,7 +3354,7 @@ def bid_page():
                     const current = select.value;
                     select.replaceChildren(new Option('Choose manufacturer…', ''));
                     d.manufacturers.forEach(name => select.add(new Option(name, name)));
-                    select.add(new Option('➕ Add Manufacturer', '__ADD__'));
+                    select.add(new Option('Add Manufacturer', '__ADD__'));
                     select.value = d.manufacturers.find(
                         name => name.toLowerCase() === val.toLowerCase()
                     ) || current;
@@ -2875,7 +3407,7 @@ def bid_page():
                     if (sendingWindow) {{
                         sendingWindow.location.href = sendingUrl;
                         document.getElementById('form-card').innerHTML =
-                            '<h2>Decision recorded</h2><p>Continue in the sending page that opened.</p>';
+                            '<div style="padding:32px 24px; text-align:center;"><h2 style="font-size:20px; font-weight:500; color:#047857; margin-bottom:8px;">Decision recorded</h2><p style="font-size:14px; color:#6b7280;">WhatsApp opened. Please tap Send in WhatsApp.</p></div>';
                     }} else {{
                         window.location.assign(sendingUrl);
                     }}
