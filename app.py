@@ -2906,7 +2906,7 @@ def dont_bid():
     return f"""    <!DOCTYPE html>
     <html lang="en">
     <head>
-        <title>Not Bid — {html_lib.escape(tender_no)}</title>
+        <title>Not Bid &mdash; {html_lib.escape(tender_no)}</title>
         <meta name="viewport" content="width=device-width, initial-scale=1">
     </head>
     <body style="font-family:Segoe UI, sans-serif; background:#f8fafc; color:#0f172a; text-align:center; padding:32px;">
